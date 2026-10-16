@@ -342,8 +342,12 @@ async function runBackgroundAnalysis() {
         if (iB) {
             m.eval = 0;
             m.classification = "book";
+            sysLog("Book move detected", { moveIndex: i, uci: m.uci });
         } else {
+            const startTime = performance.now();
             const res = await evaluatePosition(engine, f, t);
+            const elapsedMs = Math.round(performance.now() - startTime);
+            
             m.eval = res.eval;
             m.winPercent = winPercent(res.eval);
             m.best1 = res.best1;
@@ -355,11 +359,12 @@ async function runBackgroundAnalysis() {
             m.best2Eval = res.eval2;
             m.best2WinPct = winPercent(res.eval2);
             m.targetDepth = t;
+            
+            sysLog("Move analysis complete", { moveIndex: i, moveNum: m.moveNum, uci: m.uci, depth: t, timeTakenMs: elapsedMs });
         }
         
         analysisIndex = i + 1;
         await saveGameToDB(game);
-        sysLog("Move analysis complete", { moveIndex: i, moveNum: m.moveNum, uci: m.uci, depth: t });
     }
     
     game.status = "partially completed";
@@ -430,14 +435,16 @@ function identifyOpening(mP) {
 }
 
 async function runVisualLoop() {
-    const sT = Date.now();
     let fS = 0;
     const pB = document.getElementById("visualProgressBar");
-    const tP = Math.max(1, Math.floor(game.moves.length * 0.30));
     
+    // Target plies to wait for before announcing opening (10 plies = 5 moves)
+    const tP = Math.min(10, game.moves.length);
+    
+    // Cycle facts until the engine finishes calculating the target plies
     while (true) {
-        let e = (Date.now() - sT) / 1000;
-        if (e >= 10 || analysisIndex >= tP) break;
+        if (analysisIndex >= tP || isEngineComplete) break;
+        
         if (commentsDB && commentsDB.idle_facts) {
             const f = commentsDB.idle_facts[fS % commentsDB.idle_facts.length];
             updateCoach(f);
