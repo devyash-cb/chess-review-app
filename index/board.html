@@ -1,0 +1,239 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <title>Board · Chess Review</title>
+  <link rel="stylesheet" href="styles.css">
+  <style>
+    :root {
+      --sq-light: #ebecd0;
+      --sq-dark: #739552;
+      --move-duration: 0.3s;
+    }
+
+    .topbar { display: flex; align-items: center; justify-content: space-between; padding: 10px 16px; background: var(--panel); border-bottom: 1px solid var(--line); }
+    .topbar-center { text-align: center; flex: 1; }
+    .topbar-center h1 { margin: 0; font-size: 16px; }
+    .icon-btn { background: transparent; border: none; color: #fff; font-size: 20px; cursor: pointer; text-decoration: none; padding: 0; }
+
+    .page { padding: 10px; }
+    .board-container { width: 100%; max-width: 500px; margin: 0 auto; display: flex; flex-direction: column; gap: 8px; }
+
+    /* Coach UI */
+    .coach-container { display: flex; align-items: flex-start; gap: 10px; width: 100%; }
+    .coach-avatar { width: 55px; height: 55px; border-radius: 8px; object-fit: cover; background: var(--panel2); border: 1px solid var(--line); }
+    .coach-bubble { flex: 1; background: #f4f0fa; color: #15121d; padding: 10px 65px 10px 12px; border-radius: 12px; border-top-left-radius: 0; position: relative; font-size: 13px; font-weight: 600; min-height: 80px; max-height: 150px; overflow-y: auto; box-shadow: 0 4px 12px rgba(0,0,0,0.2); line-height: 1.5; }
+    .mute-btn { position: absolute; top: 8px; right: 8px; background: transparent; border: none; cursor: pointer; width: 22px; height: 22px; padding: 2px; opacity: 0.7; transition: opacity 0.2s; }
+    .mute-btn:active { opacity: 1; }
+    .mute-btn img { width: 100%; height: 100%; }
+    .coach-eval-badge { position: absolute; right: 8px; top: 50%; transform: translateY(-50%); background: #fff; border: 1px solid #d6cee0; padding: 4px 8px; border-radius: 6px; font-weight: 800; font-size: 13px; box-shadow: 0 2px 6px rgba(0,0,0,0.1); color: #15121d; text-align: center; min-width: 35px; }
+    .seq-move-link { cursor: pointer; color: var(--purple); font-weight: 800; padding: 2px 4px; border-radius: 4px; transition: background 0.2s; }
+    .seq-move-link:hover { background: #e5dcf5; }
+    .seq-move-link.active-seq { background: var(--purple); color: #fff; }
+
+    /* Board & Eval Bar Layout */
+    .board-layout-wrapper { display: flex; align-items: stretch; gap: 8px; width: 100%; aspect-ratio: calc(1 + 45/500) / 1; }
+
+    /* THICKER Eval Bar */
+    .eval-bar { width: 45px; border-radius: 4px; background: #2A2F3A; border: 1px solid var(--line); display: flex; flex-direction: column; overflow: hidden; position: relative; }
+    .eval-fill { width: 100%; background: #ebecd0; transition: height 0.4s ease-in-out; position: absolute; left: 0; }
+    .eval-fill.w-bottom { bottom: 0; }
+    .eval-fill.b-bottom { top: 0; }
+    .eval-text-overlay { position: absolute; width: 100%; text-align: center; font-size: 11px; font-weight: 900; z-index: 10; top: 5px; color: #888; }
+    .eval-text-overlay.bottom { top: auto; bottom: 5px; }
+
+    /* Chess Board */
+    .chessboard-wrapper { flex: 1; position: relative; border: 2px solid var(--line); border-radius: 6px; overflow: hidden; box-shadow: 0 4px 14px rgba(0,0,0,0.4); cursor: pointer; }
+    .chessboard { display: grid; grid-template-columns: repeat(8, 1fr); grid-template-rows: repeat(8, 1fr); width: 100%; height: 100%; z-index: 1; position: relative;}
+    .square { position: relative; display: flex; align-items: center; justify-content: center; }
+    .square.light { background-color: var(--sq-light); }
+    .square.dark { background-color: var(--sq-dark); }
+    
+    .coord-rank { position: absolute; top: 2px; left: 3px; font-size: 10px; font-weight: 800; z-index: 2; pointer-events: none; }
+    .coord-file { position: absolute; bottom: 1px; right: 3px; font-size: 10px; font-weight: 800; z-index: 2; pointer-events: none; }
+    .light .coord-text { color: var(--sq-dark); opacity: 0.8;}
+    .dark .coord-text { color: var(--sq-light); opacity: 0.8;}
+
+    /* Highlights & Dots */
+    .highlight-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; opacity: 0.6; z-index: 1; display: none; }
+    .legal-dot { position: absolute; width: 32%; height: 32%; background: rgba(0,0,0,0.25); border-radius: 50%; z-index: 6; pointer-events: none; }
+
+    /* Pieces & Badges */
+    .piece-layer { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 5; }
+    .piece { position: absolute; width: 12.5%; height: 12.5%; background-size: 95%; background-repeat: no-repeat; background-position: center; transition: transform var(--move-duration) ease-in-out, opacity 0.2s ease; pointer-events: none; }
+    
+    /* Dedicated Badge Layer */
+    .badge-layer { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 10; }
+    .floating-badge { position: absolute; width: 22px; height: 22px; margin-top: -6px; margin-left: -6px; z-index: 10; background: transparent; filter: drop-shadow(0 2px 4px rgba(0,0,0,0.5)); transition: transform var(--move-duration) ease-in-out;}
+    .badge-spinner { width: 14px; height: 14px; border: 3px solid rgba(255,255,255,0.3); border-top: 3px solid #fff; border-radius: 50%; animation: spin 1s linear infinite; margin: 2px; }
+
+    /* Colors */
+    .c-brilliant { background-color: #1cb0a6; }
+    .c-great { background-color: #3b82f6; }
+    .c-best, .c-excellent { background-color: #84cc16; }
+    .c-good { background-color: #65a30d; }
+    .c-book { background-color: #b4855d; }
+    .c-inaccuracy { background-color: #eab308; }
+    .c-mistake { background-color: #f97316; }
+    .c-miss { background-color: #ec4899; }
+    .c-blunder { background-color: #ef4444; }
+    .c-loading { background-color: #a855f7; opacity: 0.7; }
+    .c-unknown { background-color: #facc15; opacity: 0.4; } 
+
+    /* Move Slider UI */
+    .slider-wrapper { display: flex; align-items: center; background: var(--panel2); border: 1px solid var(--line); border-radius: 8px; padding: 4px; gap: 4px; margin-top: 2px; }
+    .slider-arrow { background: transparent; border: none; color: var(--muted); cursor: pointer; padding: 8px; display: flex; align-items: center; justify-content: center; transition: color 0.2s; user-select: none;}
+    .slider-arrow:active { color: var(--purple); }
+    .slider-arrow svg { width: 20px; height: 20px; }
+    
+    .move-slider { flex: 1; display: flex; overflow-x: auto; scroll-behavior: smooth; gap: 10px; padding: 6px; scrollbar-width: none; }
+    .move-slider::-webkit-scrollbar { display: none; }
+    .move-pair { display: flex; align-items: center; gap: 6px; background: #0c0a11; padding: 6px 10px; border-radius: 6px; border: 1px solid var(--line); flex-shrink: 0; }
+    .move-num { color: var(--muted); font-size: 12px; font-weight: bold; width: 18px; }
+    .move-ply { display: flex; align-items: center; gap: 4px; color: #fff; font-size: 13px; font-weight: bold; cursor: pointer; padding: 4px; border-radius: 4px; transition: background 0.2s; }
+    .move-ply:active, .move-ply.active { background: #332d42; color: var(--purple); }
+    .mc-icon { width: 14px; height: 14px; display: flex; align-items: center; justify-content: center; }
+
+    /* Action Controls */
+    .action-controls { display: grid; grid-template-columns: 1.2fr 1fr 1fr; gap: 10px; margin-top: 2px; }
+    .action-btn { background: var(--panel2); border: 1px solid var(--line); padding: 10px; border-radius: 8px; color: #fff; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: background 0.2s; }
+    .action-btn:active, .action-btn.active-state { background: var(--purple); border-color: var(--purple); }
+    .action-btn svg { width: 20px; height: 20px; stroke: currentColor; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+    .action-icon-img { width: 22px; height: 22px; filter: brightness(0) invert(1); } 
+
+    /* Modals */
+    .modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); display: flex; align-items: center; justify-content: center; z-index: 1000; }
+    .modal-box { background: var(--panel); border: 1px solid var(--line); padding: 20px; border-radius: 12px; width: 90%; max-width: 350px; text-align: left; }
+    .hidden { display: none !important; }
+    
+    .spinner { width: 40px; height: 40px; border: 4px solid var(--line); border-top: 4px solid var(--purple); border-radius: 50%; animation: spin 1s linear infinite; }
+    @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+  </style>
+</head>
+<body>
+
+<div id="loadingOverlay" class="modal-overlay" style="z-index: 2000; background: var(--panel);">
+  <div style="text-align:center;">
+    <div class="spinner" style="margin: 0 auto 15px auto;"></div>
+    <h2 style="color:var(--purple); margin:0;">Loading Board...</h2>
+  </div>
+</div>
+
+<header class="topbar">
+  <a class="icon-btn" href="#" id="backBtn" aria-label="Back">←</a>
+  <div class="topbar-center">
+    <div class="eyebrow" style="font-size:10px; color:var(--muted); letter-spacing:1px;">CHESS REVIEW</div>
+    <h1>Game Board</h1>
+  </div>
+  
+  <div style="display: flex; gap: 12px;">
+    <!-- Iota Info Button -->
+    <button class="icon-btn" onclick="document.getElementById('infoModal').classList.remove('hidden')">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 4v.01"/><path d="M12 8v8"/><path d="M10 16h4"/></svg>
+    </button>
+    <button class="icon-btn" onclick="window.openSettings()">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
+    </button>
+  </div>
+</header>
+
+<main class="page">
+  <div class="board-container">
+    
+    <div class="coach-container">
+      <img src="pieces/coach.png" class="coach-avatar" alt="Coach" onerror="this.src='data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI2MCIgaGVpZ2h0PSI2MCI+PHJlY3Qgd2lkdGg9IjYwIiBoZWlnaHQ9IjYwIiBmaWxsPSIjNDQiLz48dGV4dCB4PSI1MCUiIHk9IjUwJSIgZmlsbD0iI2ZmZiIgZHk9Ii4zZW0iIHRleHQtYW5jaG9yPSJtaWRkbGUiPkM8L3RleHQ+PC9zdmc+'">
+      <div class="coach-bubble">
+        <span id="coachText">Let's review the game.</span>
+        <button id="muteBtn" class="mute-btn"><img id="muteIcon" src="pieces/unmute.png" alt="Mute" onerror="this.style.display='none'"></button>
+        <div id="coachEvalBadge" class="coach-eval-badge">0.00</div>
+      </div>
+    </div>
+
+    <div class="board-layout-wrapper">
+      <div class="eval-bar" id="evalBar">
+        <div class="eval-fill w-bottom" id="evalFill"></div>
+        <div class="eval-text-overlay" id="evalTextTop"></div>
+        <div class="eval-text-overlay bottom" id="evalTextBottom"></div>
+      </div>
+
+      <div class="chessboard-wrapper" id="boardClickArea">
+        <div id="chessboard" class="chessboard"></div>
+        <div id="piece-layer" class="piece-layer"></div>
+        <div id="badge-layer" class="badge-layer"></div>
+      </div>
+    </div>
+
+    <div class="slider-wrapper">
+      <button class="slider-arrow" id="btnPrevMove" title="Previous Move">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"></polyline></svg>
+      </button>
+      <div class="move-slider" id="moveSlider"></div>
+      <button class="slider-arrow" id="btnNextMove" title="Next Move">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"></polyline></svg>
+      </button>
+    </div>
+
+    <div class="action-controls">
+      <button class="action-btn" id="btnHint" title="Show Hint">
+        <svg viewBox="0 0 24 24"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" fill="none" stroke="currentColor"></polygon></svg>
+        <span style="margin-left: 6px; font-size: 13px; font-weight: bold;">Show best</span>
+      </button>
+      <button class="action-btn" id="btnSeq" title="Play Best Sequence">
+        <img src="pieces/hand.png" class="action-icon-img" alt="Hand" onerror="this.style.display='none'">
+      </button>
+      <button class="action-btn" id="btnFF" title="Fast Forward to Error">
+        <svg viewBox="0 0 24 24"><polygon points="13 19 22 12 13 5 13 19" fill="currentColor"></polygon><polygon points="2 19 11 12 2 5 2 19" fill="currentColor"></polygon></svg>
+      </button>
+    </div>
+
+  </div>
+</main>
+
+<!-- Settings Modal -->
+<div id="settingsModal" class="modal-overlay hidden">
+  <div class="modal-box">
+    <h3 style="color: var(--purple); text-align: center; margin-top: 0;">Board Controls</h3>
+    
+    <label style="display: flex; justify-content: space-between; font-size: 13px; font-weight: 600; margin-top: 14px; margin-bottom: 6px; color: #d6cee0;">Reviewing As</label>
+    <select id="cfgPerspective" style="width: 100%; padding: 10px; background: #0c0a11; color: white; border: 1px solid var(--line); border-radius: 6px; margin-bottom: 8px;">
+      <option value="auto">Auto-Detect</option>
+      <option value="w">White</option>
+      <option value="b">Black</option>
+    </select>
+
+    <label style="display: flex; justify-content: space-between; font-size: 13px; font-weight: 600; margin-top: 14px; margin-bottom: 6px; color: #d6cee0;">Move Animation Speed <span id="valMoveSpeed">0.4s</span></label>
+    <input type="range" id="cfgMoveSpeed" min="0.1" max="1.0" step="0.1" style="width: 100%; accent-color: var(--purple); margin-bottom: 8px;">
+    
+    <label style="display: flex; justify-content: space-between; font-size: 13px; font-weight: 600; margin-top: 14px; margin-bottom: 6px; color: #d6cee0;">Coach Reading Time <span id="valReadingTime">3s</span></label>
+    <input type="range" id="cfgReadingTime" min="2" max="10" step="1" style="width: 100%; accent-color: var(--purple); margin-bottom: 8px;">
+    
+    <label style="display: flex; justify-content: space-between; font-size: 13px; font-weight: 600; margin-top: 14px; margin-bottom: 6px; color: #d6cee0;">Sequence Step Time <span id="valSeqSpeed">2s</span></label>
+    <input type="range" id="cfgSeqSpeed" min="1" max="8" step="1" style="width: 100%; accent-color: var(--purple); margin-bottom: 8px;">
+    
+    <label style="display: flex; justify-content: space-between; font-size: 13px; font-weight: 600; margin-top: 14px; margin-bottom: 6px; color: #d6cee0;">Fast Forward Speed <span id="valFFSpeed">0.2s</span></label>
+    <input type="range" id="cfgFFSpeed" min="0.1" max="1.0" step="0.1" style="width: 100%; accent-color: var(--purple); margin-bottom: 8px;">
+    
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 15px; font-size: 13px; font-weight: 600; color: #d6cee0;">
+      <span>Auto-play Sequence</span>
+      <input type="checkbox" id="cfgAutoSeq" style="transform: scale(1.3); accent-color: var(--purple);">
+    </div>
+    
+    <div style="margin-top: 20px;">
+      <button onclick="window.saveAndCloseSettings()" style="width: 100%; padding: 12px; border-radius: 6px; font-weight: bold; cursor: pointer; background: var(--purple); border: none; color: white;">Save & Close</button>
+    </div>
+  </div>
+</div>
+
+<div id="infoModal" class="modal-overlay hidden">
+  <div class="modal-box">
+    <h3 style="color: var(--purple); text-align: center; margin-top: 0;">Information</h3>
+    <p style="font-size: 14px; line-height: 1.5; color: var(--muted); text-align: center;">More dynamic features will be displayed here soon!</p>
+    <button onclick="document.getElementById('infoModal').classList.add('hidden')" style="width: 100%; padding: 10px; border-radius: 6px; font-weight: bold; cursor: pointer; background: var(--panel2); border: 1px solid var(--line); color: white; margin-top: 15px;">Close</button>
+  </div>
+</div>
+
+<script type="module" src="board.js"></script>
+<script src="debugger.js"></script>
+</body>
+</html>

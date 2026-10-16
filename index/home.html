@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Dashboard · Chess Review</title>
+<link rel="stylesheet" href="styles.css">
+<style>
+.status-pending{background:#3d1717;color:var(--red)}
+.status-partially-completed{background:#3a3112;color:var(--yellow)}
+.status-complete{background:#123622;color:var(--green)}
+.color-box{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:4px;vertical-align:middle}
+.box-w{background:#f4f0fa;border:1px solid #aaa}
+.box-b{background:#15121d;border:1px solid #555}
+.modal-overlay{position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.6);display:flex;align-items:center;justify-content:center;z-index:1000}
+.modal-box{background:var(--panel);border:1px solid var(--line);padding:20px;border-radius:14px;width:90%;max-width:320px;display:flex;flex-direction:column;gap:10px}
+.modal-box h3{margin:0 0 5px 0;font-size:18px}
+.danger-btn{background:#3d1717;color:var(--red);border:1px solid var(--red)}
+.game-tag{font-size:13px;color:var(--text);margin-top:8px;white-space:pre-wrap;word-wrap:break-word;background:#100d16;padding:8px 10px;border-radius:6px;border:1px solid var(--line);line-height:1.4}
+.game-tag b{color:var(--purple)}
+.game-tag i{color:var(--muted)}
+</style>
+</head>
+<body>
+<header class="topbar">
+<div><div class="eyebrow">CHESS REVIEW</div><h1>Game Review</h1></div>
+<div>
+<a class="icon-btn" href="puzzle.html" aria-label="Puzzles" style="margin-right:10px;text-decoration:none">🧩</a>
+<a class="icon-btn" href="settings.html" aria-label="Settings" style="text-decoration:none">⚙</a>
+</div>
+</header>
+<main class="page">
+<section class="panel">
+<div class="section-head"><div><h2>Analyze a game</h2><p>Paste a PGN to create a review.</p></div></div>
+<textarea id="pgnInput" class="pgn-input" spellcheck="false" placeholder='Paste PGN here...'></textarea>
+<div class="row-actions">
+<button id="analyzeBtn" class="primary-btn">Analyze game</button>
+<button id="clearBtn" class="ghost-btn">Clear</button>
+</div>
+<div id="indexStatus" class="status-line"></div>
+</section>
+<section class="panel">
+<div class="section-head"><div><h2>Previous games</h2><p id="gameCount">0 saved reviews</p></div><input id="searchInput" class="search" type="search" placeholder="Search player, opening, tag…"></div>
+<div id="gamesList" class="games-list"></div>
+</section>
+</main>
+<div id="actionModal" class="modal-overlay hidden">
+<div class="modal-box">
+<h3>Game Options</h3>
+<button id="btnTag" class="primary-btn">Tag Game</button>
+<button id="btnDelete" class="ghost-btn danger-btn" style="background:var(--red);color:white;border:none">Delete Game</button>
+<button id="btnCancelAction" class="ghost-btn">Cancel</button>
+</div>
+</div>
+<div id="tagModal" class="modal-overlay hidden">
+<div class="modal-box">
+<h3>Tag Game</h3>
+<p class="muted" style="font-size:13px;margin:0">Supports **bold**, *italic*, __underline__, and new lines.</p>
+<textarea id="tagInput" class="pgn-input" spellcheck="false" placeholder="Enter tag or comment..." maxlength="2000" style="min-height:120px;resize:none;margin-top:10px;font-size:13px;line-height:1.4"></textarea>
+<div class="row-actions" style="margin-top:5px">
+<button id="saveTagBtn" class="primary-btn" style="flex:1">Save Tag</button>
+<button id="cancelTagBtn" class="ghost-btn" style="flex:1">Cancel</button>
+</div>
+</div>
+</div>
+<script type="module">
+import{parseAndSavePGN}from'./parser.js';
+document.addEventListener("DOMContentLoaded",async()=>{
+try{if(window.Capacitor&&window.Capacitor.Plugins&&window.Capacitor.Plugins.App){window.Capacitor.Plugins.App.addListener('backButton',()=>{const tagModal=document.getElementById("tagModal");const actionModal=document.getElementById("actionModal");if(!tagModal.classList.contains("hidden")){tagModal.classList.add("hidden")}else if(!actionModal.classList.contains("hidden")){actionModal.classList.add("hidden")}else{window.Capacitor.Plugins.App.exitApp()}})}}catch(e){}
+if(localStorage.getItem("needsIndexRefresh")==="1"){localStorage.removeItem("needsIndexRefresh");window.location.reload();return;}
+const settings=JSON.parse(localStorage.getItem("chessReviewSettings")||"{}");
+const myUsername=(settings.username||"").toLowerCase();
+let allGames=[];let activeGameId=null;let tagTargetGameId=null;
+async function getDB(){return new Promise((resolve)=>{const req=indexedDB.open("ChessReviewDB",3);req.onsuccess=()=>resolve(req.result);req.onerror=()=>resolve(null);});}
+async function loadGames(){
+const localGames=JSON.parse(localStorage.getItem("chessReviewGames")||"[]");
+const db=await getDB();
+let idbGames=[];
+if(db&&db.objectStoreNames.contains("games")){idbGames=await new Promise(resolve=>{const req=db.transaction("games","readonly").objectStore("games").getAll();req.onsuccess=()=>resolve(req.result||[]);req.onerror=()=>resolve([]);});}
+const gameMap=new Map(idbGames.map(g=>[g.id,g]));
+allGames=[...localGames.map(g=>gameMap.get(g.id)||g)];
+for(const g of idbGames)if(!allGames.find(ex=>ex.id===g.id))allGames.push(g);
+allGames.sort((a,b)=>new Date(b.playedAt||0)-new Date(a.playedAt||0));
+renderGames();
+}
+function renderGames(){
+const query=document.getElementById("searchInput").value.toLowerCase();
+const filtered=allGames.filter(g=>`${g.white} ${g.black} ${g.opening} ${g.status} ${g.result} ${g.tag||""}`.toLowerCase().includes(query));
+document.getElementById("gameCount").textContent=`${filtered.length} saved review${filtered.length===1?"":"s"}`;
+const list=document.getElementById("gamesList");
+if(filtered.length===0){list.innerHTML=`<div class="muted">No games found.</div>`;return;}
+list.innerHTML=filtered.map(g=>{
+const isBlackMe=myUsername&&g.black.toLowerCase()===myUsername;
+let leftPlayer=isBlackMe?g.black:g.white;
+let rightPlayer=isBlackMe?g.white:g.black;
+let leftColor=isBlackMe?'b':'w';
+let rightColor=isBlackMe?'w':'b';
+const currentStatus=g.status||'pending';
+let displayStatus=currentStatus;
+let statusClass=currentStatus;
+if(currentStatus==='fast'||currentStatus==='partially completed'){displayStatus='Partially completed';statusClass='partially-completed';}
+const targetPage=currentStatus==='pending'?'wait.html':'analysis.html';
+const tagHTML=g.tag?`<div class="game-tag">🏷️ ${formatTag(g.tag)}</div>`:'';
+return`<a class="game-card" data-id="${g.id}" href="${targetPage}?gameId=${encodeURIComponent(g.id)}"><div class="game-card-top"><div class="game-players"><span class="color-box box-${leftColor}"></span>${escapeHTML(leftPlayer)} vs <span class="color-box box-${rightColor}"></span>${escapeHTML(rightPlayer)}</div><span class="status-badge status-${statusClass}">${escapeHTML(displayStatus.toUpperCase())}</span></div><div class="game-meta">${escapeHTML(g.opening||"Unidentified")} · ${formatDate(g.playedAt)} · ${g.moveCount||0} moves</div>${tagHTML}</a>`;
+}).join("");
+document.querySelectorAll('.game-card').forEach(card=>{
+let pressTimer;
+const id=card.getAttribute('data-id');
+card.addEventListener('contextmenu',(e)=>{e.preventDefault();openActionModal(id);});
+card.addEventListener('touchstart',()=>{pressTimer=setTimeout(()=>openActionModal(id),600);});
+card.addEventListener('touchend',()=>clearTimeout(pressTimer));
+card.addEventListener('touchmove',()=>clearTimeout(pressTimer));
+});
+}
+const actionModal=document.getElementById("actionModal");
+const tagModal=document.getElementById("tagModal");
+const tagInput=document.getElementById("tagInput");
+function openActionModal(id){activeGameId=id;actionModal.classList.remove("hidden");}
+document.getElementById("btnCancelAction").onclick=()=>{actionModal.classList.add("hidden");activeGameId=null;};
+document.getElementById("btnTag").onclick=()=>{if(!activeGameId)return;const game=allGames.find(g=>g.id===activeGameId);if(!game)return;tagTargetGameId=activeGameId;tagInput.value=game.tag||"";actionModal.classList.add("hidden");tagModal.classList.remove("hidden");tagInput.focus();};
+document.getElementById("cancelTagBtn").onclick=()=>{tagModal.classList.add("hidden");tagTargetGameId=null;};
+document.getElementById("saveTagBtn").onclick=async()=>{if(!tagTargetGameId)return;let newTag=tagInput.value.trim().substring(0,2000);const game=allGames.find(g=>g.id===tagTargetGameId);if(game)game.tag=newTag;let local=JSON.parse(localStorage.getItem("chessReviewGames")||"[]");let localIdx=local.findIndex(x=>x.id===tagTargetGameId);if(localIdx!==-1){local[localIdx].tag=newTag;localStorage.setItem("chessReviewGames",JSON.stringify(local));}const db=await getDB();if(db&&db.objectStoreNames.contains("games")){const tx=db.transaction("games","readwrite");const store=tx.objectStore("games");const req=store.get(tagTargetGameId);req.onsuccess=()=>{if(req.result){const updatedGame=req.result;updatedGame.tag=newTag;store.put(updatedGame);}};}tagModal.classList.add("hidden");activeGameId=null;tagTargetGameId=null;renderGames();};
+document.getElementById("btnDelete").onclick=async()=>{if(!activeGameId)return;let local=JSON.parse(localStorage.getItem("chessReviewGames")||"[]");localStorage.setItem("chessReviewGames",JSON.stringify(local.filter(x=>x.id!==activeGameId)));const db=await getDB();if(db&&db.objectStoreNames.contains("games")){db.transaction("games","readwrite").objectStore("games").delete(activeGameId);}actionModal.classList.add("hidden");activeGameId=null;loadGames();};
+function escapeHTML(s){return String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"}[c]));}
+function formatTag(s){return escapeHTML(s).replace(/\*\*(.*?)\*\*/g,'<b>$1</b>').replace(/\*(.*?)\*/g,'<i>$1</i>').replace(/__(.*?)__/g,'<u>$1</u>').replace(/\n/g,'<br>');}
+function formatDate(value){if(!value)return"Unknown Date";const d=new Date(value);return isNaN(d)?"Unknown Date":d.toLocaleDateString();}
+document.getElementById("analyzeBtn").addEventListener("click",()=>{const pgn=document.getElementById("pgnInput").value.trim();const statusLine=document.getElementById("indexStatus");if(!pgn)return statusLine.textContent="Please paste a PGN first.";try{statusLine.textContent="";localStorage.removeItem("forceFullAnalysis");parseAndSavePGN(pgn);}catch(error){statusLine.textContent=error.message;}});
+document.getElementById("clearBtn").addEventListener("click",()=>{document.getElementById("pgnInput").value="";document.getElementById("indexStatus").textContent="";});
+document.getElementById("searchInput").addEventListener("input",renderGames);
+loadGames();
+});
+</script>
+</body>
+</html>

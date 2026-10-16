@@ -1,0 +1,292 @@
+{
+  "greetings": {
+    "own_game": [
+      "Another game today? Let's dive in and see how you did.",
+      "Welcome back! Let's review this game together.",
+      "Ready to analyze? Let's see what we can learn from this one.",
+      "Let's break down your game. I'm sure there are some great moments in here.",
+      "Time for a review! Let's see how well you navigated the board today."
+    ],
+    "other_game": [
+      "Analyzing someone else's game? A great way to learn.",
+      "Let's see what these players were thinking.",
+      "Studying other games is how we improve. Let's break this down.",
+      "Let's see what lessons we can extract from this matchup.",
+      "Reviewing a masterclass, or just a friend's game? Let's find out."
+    ]
+  },
+  "openings": {
+    "move_1_white": {
+      "e4": [
+        "Ah, e4. 'Best by test' as Bobby Fischer used to say.",
+        "e4! A fiery start. Grabbing the center immediately.",
+        "The classic King's Pawn opening. Someone wants a tactical battle today.",
+        "e4 is on the board. Going for rapid piece development."
+      ],
+      "d4": [
+        "d4. A very solid, strategic choice.",
+        "The Queen's Pawn opening. Preparing for a deep, maneuvering game.",
+        "d4 it is. Controlling the center while keeping things structurally sound.",
+        "Starting with d4. A favorite of many positional world champions."
+      ],
+      "c4": [
+        "The English Opening! Flanking the center right away.",
+        "c4... inviting a complex, asymmetrical struggle."
+      ],
+      "Nf3": [
+        "Nf3. The Reti opening! Keeping the center pawns in reserve for now.",
+        "Flexible and tricky. Nf3 doesn't commit to a central pawn structure yet."
+      ]
+    },
+    "move_1_black": {
+      "e5": [
+        "e5, meeting fire with fire in the center. Very principled.",
+        "The classical response, mirroring white's central control."
+      ],
+      "c5": [
+        "The Sicilian Defense! We have a fighter on the board.",
+        "c5... immediately unbalancing the position. This will be a sharp game."
+      ],
+      "e6": [
+        "e6, the French Defense. Solid, but prepares to strike back at the center.",
+        "A very resilient setup with e6. Preparing the d5 push."
+      ],
+      "c6": [
+        "The Caro-Kann Defense. Extremely solid and hard to crack."
+      ],
+      "Nf6": [
+        "Nf6. A flexible hypermodern response, controlling the center with pieces."
+      ]
+    },
+    "sequences": {
+      "e4 e5 Nf3 Nc6 Bc4": [
+        "The Italian Game! Focusing on rapid development and targeting the sensitive f7 square.",
+        "Entering the Italian. A classic, attacking opening that leads to beautiful tactical middle games."
+      ],
+      "e4 e5 Nf3 Nc6 Bb5": [
+        "The Ruy Lopez, the Spanish torture! A true test of strategic understanding.",
+        "The Ruy Lopez. A grandmaster favorite that immediately puts pressure on Black's center."
+      ],
+      "e4 c5 Nf3 d6 d4": [
+        "The Open Sicilian! Buckle up, things are about to get incredibly sharp and tactical.",
+        "Going for the Open Sicilian. Both sides are going to attack fiercely!"
+      ],
+      "e4 e6 d4 d5": [
+        "The French Defense main line. Black's position is cramped but fundamentally solid like a rock.",
+        "Entering the French. White gets space, but Black gets a robust defensive structure."
+      ],
+      "d4 d5 c4 e6": [
+        "The Queen's Gambit Declined. A legendary battleground for positional chess.",
+        "Solid and classical. The Queen's Gambit Declined has stood the test of time."
+      ],
+      "d4 Nf6 c4 g6 Nc3 Bg7": [
+        "The King's Indian Defense! Black allows a massive white center, preparing to counterattack it later.",
+        "The King's Indian. A favorite of Kasparov and Fischer. Expect fireworks on the kingside!"
+      ]
+    }
+  },
+  "reactions": {
+    "user": {
+      "perfect_move": [
+        "Right on the money! That matches Stockfish's top choice perfectly.",
+        "Excellent move. You are playing like a machine here.",
+        "Flawless execution. Exactly what the position demanded.",
+        "Zero evaluation loss. Spot on calculation!",
+        "Perfectly played. Keeping maximum pressure on the opponent."
+      ],
+      "took_free_piece": [
+        "Excellent. You saw the hanging piece and correctly grabbed it.",
+        "No hesitation. If they leave material hanging, snatch it up!",
+        "Good board vision. Taking the free material was exactly the right call.",
+        "Very nice. You punished their mistake by safely capturing the piece.",
+        "Material advantage secured! The engine agrees completely."
+      ],
+      "missed_capture": [
+        "You missed a golden opportunity there. {best_move} would have snatched a free piece!",
+        "The engine is screaming here! You could have just safely captured material with {best_move}.",
+        "A big missed opportunity. Capturing with {best_move} was completely safe and winning.",
+        "You left free material on the board! {best_move} was the easiest way to gain an advantage.",
+        "Sometimes the simplest move is the best. {best_move} would have picked up a free piece."
+      ],
+      "eval_drop_minor": [
+        "A slight inaccuracy. {best_move} would have kept the pressure up.",
+        "Not terrible, but there was a slightly better continuation with {best_move}.",
+        "You let a small edge slip away. The engine preferred {best_move}.",
+        "A minor positional slip. {best_move} was slightly more precise.",
+        "The position remains fine, but {best_move} was the optimal plan."
+      ],
+      "eval_drop_major": [
+        "That's a noticeable mistake. The position is slipping away. {best_move} was the way to go.",
+        "You lost the thread of the position here. {best_move} was much stronger.",
+        "A significant error. This allows the opponent counterplay. {best_move} was needed.",
+        "Your advantage just took a noticeable hit. You had to play {best_move} here.",
+        "That move creates real problems for you. {best_move} was the correct defense."
+      ],
+      "blundered_material": [
+        "Ouch. That move seems to drop material. The engine strongly preferred {best_move}.",
+        "A painful oversight. The evaluation just crashed. {best_move} was needed to hold the position together.",
+        "A catastrophic mistake! Your win percentage plummeted because you missed {best_move}.",
+        "Wait, did you miss their threat? That was a severe blunder. {best_move} was required.",
+        "That is a massive blunder. Let's hope the opponent doesn't find the punishment!"
+      ]
+    },
+    "other": {
+      "perfect_move": [
+        "An absolutely perfect move from them. Matching the engine.",
+        "Flawless execution here. Finding the absolute best continuation.",
+        "Very precise play in this position.",
+        "Playing like a machine! No evaluation lost.",
+        "A top-tier engine move. Keeping maximum pressure."
+      ],
+      "took_free_piece": [
+        "They spotted the hanging piece and correctly grabbed it.",
+        "Good board vision from them. Taking the free material.",
+        "They safely snatched up the material. A good decision.",
+        "Punishing the mistake correctly by capturing the piece.",
+        "Material advantage secured for them."
+      ],
+      "missed_capture": [
+        "They completely missed a free piece! {best_move} was winning.",
+        "A huge miss from them. They could have captured safely with {best_move}.",
+        "They left material on the board. {best_move} was the easy choice.",
+        "The engine is shocked! They ignored the free piece when {best_move} was available.",
+        "A massive let-off. They failed to play {best_move} to win material."
+      ],
+      "eval_drop_minor": [
+        "A slight inaccuracy by them. {best_move} would have been better.",
+        "Not the most precise move. The engine preferred {best_move}.",
+        "They let a small edge slip away. {best_move} was optimal.",
+        "A minor positional slip from them.",
+        "The position remains okay, but {best_move} was stronger."
+      ],
+      "eval_drop_major": [
+        "A noticeable mistake by them. {best_move} was much stronger.",
+        "They lost the thread of the position here. {best_move} was required.",
+        "A significant error. This allows a comeback. {best_move} was the way.",
+        "Their position just took a hit. They missed {best_move}.",
+        "That move creates real problems for them."
+      ],
+      "blundered_material": [
+        "Ouch. A massive blunder from them. {best_move} was necessary.",
+        "A painful oversight. Their evaluation just crashed.",
+        "A catastrophic mistake! They completely missed {best_move}.",
+        "They just dropped the ball entirely. What a blunder.",
+        "That is a massive error. Let's see if it gets punished!"
+      ]
+    }
+  },
+  "summaries": {
+    "user": {
+      "opening_good_won": [
+        "You played a fantastic opening, secured a solid advantage early, and smoothly converted it into a victory. Well done!",
+        "A textbook game! You dominated the first 15 moves and never let go of the steering wheel.",
+        "You gained a great advantage right out of the opening and used it perfectly to convert this game into a win.",
+        "Excellent opening preparation. You got ahead early and didn't give them a chance to breathe.",
+        "You built a dominant position in the early game and carried that momentum all the way to checkmate."
+      ],
+      "opening_good_lost": [
+        "You actually played the opening beautifully and had a clear advantage, but unfortunately lost the thread later on.",
+        "The first 15 moves were great! You got a superior position, but the midgame complications got the better of you this time.",
+        "You built a fantastic early advantage, but let it slip away as the game went on. A tough loss.",
+        "A heartbreaking result. You outplayed them in the opening, but a few tactical slips cost you the game.",
+        "You proved you know your openings well, getting a great position. Next time, focus on converting that advantage!"
+      ],
+      "opening_poor_won": [
+        "Your opening was a bit shaky and you were on the back foot, but you fought back incredibly well to snatch the win!",
+        "You showed great resilience here. The opening didn't go your way, but you completely outplayed them in the middlegame.",
+        "A brilliant comeback! You survived a tough opening phase and turned the tables beautifully.",
+        "You were losing ground early on, but you stayed calm and capitalized on their mistakes to win the game.",
+        "Never give up! The opening was rough, but your tactical awareness in the late game won you the match."
+      ],
+      "opening_poor_lost": [
+        "The opening was tough, and it put you in a difficult position that was hard to recover from.",
+        "You fell behind early in the opening, making it an uphill battle for the rest of the game.",
+        "The opponent caught you off guard early on. It's hard to win when the opening puts you on the defensive.",
+        "A tough game. Losing the advantage in the first 15 moves made defending very difficult.",
+        "They got the better of you in the opening phase, and managed to slowly squeeze out the win."
+      ]
+    },
+    "other": {
+      "opening_good_won": [
+        "They played a fantastic opening, secured an advantage, and smoothly converted it into a victory.",
+        "A textbook game from them! Dominating the early phase and never letting go.",
+        "They gained a great advantage right out of the opening and used it perfectly.",
+        "Excellent opening preparation by them. They got ahead early.",
+        "They built a dominant position in the early game and carried it to the end."
+      ],
+      "opening_good_lost": [
+        "They played the opening beautifully, but completely lost the thread later on.",
+        "The first 15 moves were great for them, but midgame complications got the better of them.",
+        "They built a fantastic early advantage, but tragically let it slip away.",
+        "They outplayed their opponent in the opening, but tactical slips cost them the game.",
+        "They got a great position early, but failed to convert it."
+      ],
+      "opening_poor_won": [
+        "Their opening was shaky, but they fought back incredibly well to snatch the win!",
+        "They showed great resilience. The opening was bad, but they outplayed their opponent later.",
+        "A brilliant comeback! They survived a tough opening and turned the tables.",
+        "They were losing ground early, but stayed calm and capitalized on mistakes.",
+        "The opening was rough for them, but their late-game awareness secured the win."
+      ],
+      "opening_poor_lost": [
+        "The opening put them in a difficult position that was impossible to recover from.",
+        "They fell behind early, making it an uphill battle for the rest of the game.",
+        "They were caught off guard early on and never managed to equalize.",
+        "Losing the advantage in the first 15 moves made their defense crumble.",
+        "They were outplayed in the opening phase and slowly squeezed out of the game."
+      ]
+    }
+  },
+  "idle_facts": [
+    "Did you know the longest recorded chess game took 269 moves? It ended in a draw.",
+    "Stockfish evaluates millions of positions every single second on your phone.",
+    "The number of possible unique chess games is greater than the number of atoms in the observable universe.",
+    "The word 'Checkmate' comes from the Persian phrase 'Shah Mat', meaning 'the King is helpless'.",
+    "Deep Blue was the first computer to defeat a reigning world champion, Garry Kasparov, in 1997.",
+    "A knight can reach any square on the chessboard, but it always takes an odd number of moves to reach a different colored square.",
+    "The folding chessboard was invented by a priest who wanted to hide his chess set by making it look like two books.",
+    "Before the 15th century, the Queen could only move one square diagonally. Now she is the most powerful piece on the board.",
+    "The second book ever printed in the English language was about chess.",
+    "The shortest possible chess game is known as the Fool's Mate, taking only two moves.",
+    "In 1999, Garry Kasparov played a chess game over the internet against the 'World Team', consisting of over 50,000 people from 75 countries.",
+    "Chess was invented in India around the 6th century, originally known as Chaturanga.",
+    "During World War II, top chess players were recruited as codebreakers at Bletchley Park.",
+    "The mathematical calculation of absolute perfect chess play is known as solving chess, which is currently impossible due to the game's complexity.",
+    "If you put one grain of wheat on the first chess square, two on the second, four on the third, and keep doubling, you would need over 18 quintillion grains.",
+    "There are 400 different possible positions after just one move by each player.",
+    "There are 72,084 different possible positions after two moves by each player.",
+    "There are over 9 million different possible positions after three moves each.",
+    "The longest possible chess game without a capture or pawn move is 5,949 moves long.",
+    "Blindfold chess is a recognized variant where players do not see the board and must memorize the entire position.",
+    "Magnus Carlsen became a chess Grandmaster at the age of 13 years and 4 months.",
+    "The first modern chess tournament was held in London in 1851.",
+    "A pawn is the only piece that captures differently than it moves.",
+    "The rule of En Passant was introduced in the 15th century to balance the new rule allowing pawns to move two squares on their first turn.",
+    "Castling is the only move in chess where two pieces are moved in the same turn.",
+    "The physical design of standard chess pieces we use today is called the Staunton design, introduced in 1849.",
+    "A rook's original name was 'Rukh', which translates to chariot.",
+    "Chess is a required subject in schools in Armenia.",
+    "The FIDE rating system used to rank players was created by physicist Arpad Elo.",
+    "AlphaZero, an AI created by Google, learned to play chess from scratch and defeated Stockfish in just 4 hours of training.",
+    "During a single game of chess, players can burn hundreds of calories just through intense brain activity and stress.",
+    "The longest time a player has ever spent thinking about a single move in a professional tournament is 2 hours and 20 minutes.",
+    "Pawn promotion originally only allowed the pawn to become the piece it had replaced on that file.",
+    "Checkers is mathematically 'solved' and will always end in a draw with perfect play, but chess remains unsolved.",
+    "In 1992, a chess match was played in space between astronauts on the Soyuz spacecraft and crew on Earth.",
+    "Alice in Wonderland's sequel, 'Through the Looking-Glass', is heavily structured around a game of chess.",
+    "The term 'Grandmaster' was first used by Tsar Nicholas II of Russia in 1914.",
+    "It is theoretically possible to have nine queens of the same color on the board at the same time.",
+    "Chess clocks were first introduced in tournament play in 1883 to stop players from taking hours for a single move.",
+    "Wilhelm Steinitz was the first official World Chess Champion, claiming the title in 1886.",
+    "The 'Immortal Game' is a famous chess match from 1851 where White sacrificed a bishop, both rooks, and his queen to achieve checkmate.",
+    "In medieval times, chess was considered an essential skill for knights to learn.",
+    "The record for the most simultaneous chess games played by one person is 604.",
+    "Chess boxes traditionally have a green felt interior because green is soothing to the eyes after staring at the high-contrast board.",
+    "The youngest person to ever beat a Grandmaster in a standard tournament game was only 8 years old.",
+    "FIDE stands for 'Fédération Internationale des Échecs', the international governing body of chess.",
+    "Some early versions of chess featured dice to determine which piece you were allowed to move.",
+    "A 'stalemate' wasn't always a draw. In some eras and regions, the player causing the stalemate lost the game.",
+    "Bobby Fischer famously stopped playing competitive chess for 20 years after winning the World Championship in 1972.",
+    "Computer chess engines use an algorithm called Alpha-Beta pruning to discard bad moves quickly and calculate deeper."
+  ]
+}

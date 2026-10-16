@@ -1,0 +1,356 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Depth Escalator · Chess Review</title>
+<link rel="stylesheet" href="../styles.css">
+<style>
+    :root { --sq-light: #ebecd0; --sq-dark: #739552; --move-duration: 0.3s; }
+    body { padding: 10px; }
+    
+    .topbar { display: flex; align-items: center; justify-content: space-between; padding: 10px 16px; background: var(--panel); border-bottom: 1px solid var(--line); margin-bottom: 15px; border-radius: 8px;}
+    .topbar-center h1 { margin: 0; font-size: 16px; }
+    .icon-btn { background: transparent; border: none; color: #fff; font-size: 20px; cursor: pointer; text-decoration: none; padding: 0; }
+
+    #de-container { display: flex; flex-direction: column; width: 100%; max-width: 500px; margin: 0 auto; }
+    
+    .board-layout-wrapper { display: flex; align-items: center; justify-content: center; width: 100%; max-width: 500px; height: auto; max-height: 55vh; margin: 0 auto 15px auto; }
+    .chessboard-wrapper { width: 100%; height: 100%; aspect-ratio: 1/1; max-height: 55vh; max-width: 55vh; position: relative; border: 2px solid var(--line); border-radius: 6px; overflow: hidden; box-shadow: 0 4px 14px rgba(0,0,0,0.4); cursor: pointer; }
+    
+    .chessboard { display: grid; grid-template-columns: repeat(8, 1fr); grid-template-rows: repeat(8, 1fr); width: 100%; height: 100%; z-index: 1; position: relative;}
+    .square { position: relative; display: flex; align-items: center; justify-content: center; }
+    .square.light { background-color: var(--sq-light); }
+    .square.dark { background-color: var(--sq-dark); }
+    
+    .coord-rank { position: absolute; top: 2px; left: 3px; font-size: 10px; font-weight: 800; z-index: 2; pointer-events: none; }
+    .coord-file { position: absolute; bottom: 1px; right: 3px; font-size: 10px; font-weight: 800; z-index: 2; pointer-events: none; }
+    .light .coord-text { color: var(--sq-dark); opacity: 0.8;}
+    .dark .coord-text { color: var(--sq-light); opacity: 0.8;}
+
+    .highlight-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; opacity: 0.6; z-index: 1; display: none; }
+    .legal-dot { position: absolute; width: 32%; height: 32%; background: rgba(0,0,0,0.25); border-radius: 50%; z-index: 6; pointer-events: none; }
+    .piece-layer { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 5; }
+    .piece { position: absolute; width: 12.5%; height: 12.5%; background-size: 95%; background-repeat: no-repeat; background-position: center; transition: transform var(--move-duration) ease-in-out, opacity 0.2s ease; pointer-events: none; }
+    .badge-layer { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 10; }
+    .floating-badge { position: absolute; width: 22px; height: 22px; margin-top: -6px; margin-left: -6px; z-index: 10; background: transparent; filter: drop-shadow(0 2px 4px rgba(0,0,0,0.5)); transition: transform var(--move-duration) ease-in-out;}
+    
+    .c-best, .c-excellent { background-color: #84cc16; }
+    .c-brilliant { background-color: #1cb0a6; }
+    .c-miss { background-color: #ec4899; }
+    .c-blunder { background-color: #ef4444; }
+    
+    .slider-wrapper { display: flex; align-items: center; background: var(--panel2); border: 1px solid var(--line); border-radius: 8px; padding: 4px; gap: 4px; margin-bottom: 15px;}
+    .move-slider { flex: 1; display: flex; overflow-x: auto; scroll-behavior: smooth; gap: 10px; padding: 6px; scrollbar-width: none; }
+    .move-slider::-webkit-scrollbar { display: none; }
+    .move-pair { display: flex; align-items: center; gap: 6px; background: #0c0a11; padding: 6px 10px; border-radius: 6px; border: 1px solid var(--line); flex-shrink: 0; }
+    .move-num { color: var(--muted); font-size: 12px; font-weight: bold; width: 18px; }
+    .move-ply { display: flex; align-items: center; gap: 4px; color: #fff; font-size: 13px; font-weight: bold; cursor: pointer; padding: 4px; border-radius: 4px; transition: background 0.2s; }
+    .move-ply:active, .move-ply.active { background: #332d42; color: var(--purple); }
+    .mc-icon { width: 14px; height: 14px; display: flex; align-items: center; justify-content: center; }
+
+    .action-btn { background: var(--panel2); border: 1px solid var(--line); padding: 14px; border-radius: 8px; color: #fff; cursor: pointer; text-align: center; font-size: 15px; transition: background 0.2s; font-weight: bold; flex: 1;}
+    .action-btn:active { background: var(--purple); border-color: var(--purple); }
+
+    .modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); display: flex; align-items: center; justify-content: center; z-index: 1000; }
+    .modal-box { background: var(--panel); border: 1px solid var(--line); padding: 22px; border-radius: 12px; width: 90%; max-width: 340px; text-align: center; max-height:85vh; overflow-y:auto; }
+    .spinner { width: 40px; height: 40px; border: 4px solid var(--line); border-top: 4px solid var(--purple); border-radius: 50%; animation: spin 1s linear infinite; margin: 0 auto 15px auto; }
+    @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+    .hidden { display: none !important; }
+
+    .de-dot { width:24px; height:24px; border-radius:50%; background:var(--panel2); border:1px solid var(--line); display:flex; align-items:center; justify-content:center; font-size:11px; font-weight:900; color:var(--muted); transition: 0.3s; }
+    .de-dot.active { border-color:var(--purple); color:var(--purple); box-shadow:0 0 8px rgba(168,85,247,0.5); transform:scale(1.15); }
+    .de-dot.correct { background:#84cc16; color:#111; border-color:#84cc16; }
+    .de-dot.wrong { background:#ef4444; color:#fff; border-color:#ef4444; }
+</style>
+</head>
+<body>
+
+<div style="max-width: 500px; margin: 0 auto;">
+    <header class="topbar">
+        <a class="icon-btn" href="../puzzle.html" id="btnBack">←</a>
+        <div class="topbar-center"><h1>Depth Escalator</h1></div>
+        <div style="display:flex; gap:12px;">
+            <button class="icon-btn" id="btnRestart" style="font-size:16px;">🔄</button>
+        </div>
+    </header>
+
+    <div style="display:flex; justify-content:center; align-items:center; gap:6px; margin-bottom:15px;" id="de-progress"></div>
+</div>
+
+<div id="de-container">
+    <div style="text-align:center; padding:40px;">
+        <div class="spinner"></div>
+        <h3 style="color:var(--purple); margin:0;">Descending...</h3>
+    </div>
+</div>
+
+<div id="floorClearModal" class="modal-overlay hidden" style="z-index: 100000;">
+    <div class="modal-box">
+        <h2 style="color:#84cc16; margin:0 0 10px 0;">Wave Cleared!</h2>
+        <p class="muted" style="margin-bottom:20px; font-size:14px;">You have survived this layer. Prepare to dive deeper.</p>
+        <button class="action-btn" style="width:100%; margin-bottom:10px; background:var(--purple); border-color:var(--purple);" onclick="window.ascendToNextFloor()">Descend Deeper</button>
+    </div>
+</div>
+
+<div id="floorFailModal" class="modal-overlay hidden" style="z-index: 100000;">
+    <div class="modal-box">
+        <h2 style="color:#ef4444; margin:0 0 10px 0;">Escalator Failed</h2>
+        <p class="muted" style="margin-bottom:20px; font-size:14px;">You slipped and fell backwards. You must restart the current wave.</p>
+        <button class="action-btn" style="width:100%; margin-bottom:10px; background:var(--purple); border-color:var(--purple);" onclick="window.restartCurrentFloor()">Restart Wave</button>
+        <button class="ghost-btn" style="width:100%;" onclick="window.location.href='../puzzle.html'">Back to Menu</button>
+    </div>
+</div>
+
+<script src="../debugger.js"></script>
+<script src="pstore.js"></script>
+<script src="pbin.js"></script>
+
+<script type="module">
+import { PuzzleBoard } from './pboard.js';
+
+let deState = {
+    floor: 1,
+    idx: 0,
+    failed: false
+};
+let queue = []; 
+
+document.getElementById("btnRestart").onclick = async () => {
+    if(confirm("Are you sure you want to abandon your progress and restart Depth Escalator from Floor 1?")) {
+        await setDB("m4pda", null);
+        window.location.reload();
+    }
+};
+
+document.addEventListener("DOMContentLoaded", async () => {
+    const savedState = await getDB("m4pda");
+    if (savedState) {
+        deState = savedState;
+        
+        // Reconstruct queue strictly from individual m4p1, m4p2, etc. keys
+        const fConfig = getFloorConfig(deState.floor);
+        const totalPuzzles = fConfig.config.reduce((sum, p) => sum + p.c, 0);
+        for (let i = 1; i <= totalPuzzles; i++) {
+            const p = await getDB(`m4p${i}`);
+            if (p) queue.push(p);
+        }
+    }
+
+    if (queue.length === 0) {
+        deState.idx = 0;
+        deState.failed = false;
+        await buildEscalatorQueue();
+    }
+    loadNextEscalatorPuzzle();
+});
+
+function getFloorConfig(f) {
+    let name = "";
+    let waveNum = 1;
+    let config = [];
+    
+    let t1_r = Math.min(2000, 1200 + (f-1)*400);
+    let t2_r = Math.min(2000, 1200 + (f-1)*200);
+    let t3_r = Math.min(2500, 1200 + (f-1)*100);
+    
+    if (f <= 2) {
+        name = "Crust";
+        waveNum = f;
+        config = [{t: 1, r: t1_r, c: 5}, {t: 2, r: t2_r, c: 3}, {t: 3, r: t3_r, c: 1}];
+    } else if (f <= 4) {
+        name = "Mantle";
+        waveNum = f - 2;
+        config = [{t: 2, r: t2_r, c: 3}, {t: 3, r: t3_r, c: 2}];
+    } else if (f <= 14) {
+        name = "Core";
+        waveNum = f - 4;
+        config = [{t: 3, r: t3_r, c: 3}];
+    } else {
+        name = "Hell";
+        waveNum = f - 14;
+        config = [{t: 3, r: 2500, c: 3, isHell: true}];
+    }
+    
+    return { name, waveNum, config };
+}
+
+async function buildEscalatorQueue() {
+    queue = [];
+    const playedSet = await getDB("playedPuzzlesSet") || {};
+    const meta = await getMeta();
+    const fConfig = getFloorConfig(deState.floor);
+        
+    for (let wc of fConfig.config) {
+        let wAdded = 0;
+        let attempts = 0;
+        
+        while(wAdded < wc.c && attempts < 200) {
+            attempts++;
+            let tName = Math.random() < 0.3 ? "unclassified" : THEMES[Math.floor(Math.random() * THEMES.length)];
+            let tMeta = meta[tName]?.[`t${wc.t}`];
+            let bStr = (Math.floor(wc.r / 100) * 100).toString();
+            
+            if (wc.isHell) {
+                const validBrackets = Object.keys(tMeta?.brackets || {}).filter(k => parseInt(k) >= 2500);
+                if (validBrackets.length > 0) {
+                    bStr = validBrackets[Math.floor(Math.random() * validBrackets.length)];
+                } else {
+                    tName = "unclassified";
+                    const fallbackB = Object.keys(meta["unclassified"]?.[`t${wc.t}`]?.brackets || {}).filter(k => parseInt(k) >= 2500);
+                    bStr = fallbackB.length > 0 ? fallbackB[Math.floor(Math.random() * fallbackB.length)] : "2500";
+                }
+            } else {
+                if (!tMeta?.brackets?.[bStr]) tName = "unclassified";
+            }
+            
+            let br = meta[tName]?.[`t${wc.t}`]?.brackets?.[bStr];
+            if (!br && tName !== "unclassified") {
+                tName = "unclassified";
+                br = meta["unclassified"]?.[`t${wc.t}`]?.brackets?.[bStr];
+            }
+
+            if (br) {
+                let rIdx = Math.floor(Math.random() * (br[1] - br[0] + 1)) + br[0];
+                let pKey = `${tName}_t${wc.t}_${rIdx}`;
+                
+                if (!playedSet[pKey] || attempts > 150) {
+                    try {
+                        let pData = await extractPuzzleData(tName, wc.t.toString(), rIdx);
+                        if (pData) {
+                            queue.push(pData);
+                            playedSet[pKey] = true;
+                            wAdded++;
+                        }
+                    } catch(e) {}
+                }
+            }
+        }
+    }
+    
+    await setDB("playedPuzzlesSet", playedSet);
+    await setDB("m4pda", deState);
+    
+    // Save puzzles strictly to m4p1, m4p2, m4p3 individually
+    for (let i = 0; i < queue.length; i++) {
+        await setDB(`m4p${i + 1}`, queue[i]);
+    }
+}
+
+function renderProgressDots(fConfig) {
+    const progContainer = document.getElementById("de-progress");
+    let html = '';
+    let dotIdx = 0;
+    
+    fConfig.config.forEach((part, i) => {
+        for(let c=0; c<part.c; c++) {
+            let statusClass = "";
+            if (dotIdx < deState.idx) statusClass = "correct";
+            else if (dotIdx === deState.idx) statusClass = "active";
+            
+            if (fConfig.name === "Hell") statusClass += " wrong"; 
+            
+            html += `<div class="de-dot ${statusClass}" id="dot-${dotIdx}">${c+1}</div>`;
+            dotIdx++;
+        }
+        if (i < fConfig.config.length - 1) {
+            html += `<div style="width: 2px; height: 16px; background: var(--line); border-radius: 2px; margin: 0 2px;"></div>`;
+        }
+    });
+    progContainer.innerHTML = html;
+}
+
+async function loadNextEscalatorPuzzle() {
+    const fConfig = getFloorConfig(deState.floor);
+    renderProgressDots(fConfig);
+
+    // Anti-Cheat: If they failed and reloaded, force them to restart the floor
+    if (deState.failed) {
+        document.getElementById(`dot-${deState.idx}`).classList.add("wrong");
+        return window.triggerFloorFail();
+    }
+
+    const totalPuzzlesForFloor = queue.length;
+
+    if (deState.idx >= totalPuzzlesForFloor) {
+        return triggerFloorClear();
+    }
+
+    const currentPuzzle = queue[deState.idx];
+    const themeStr = THEMES[currentPuzzle.t] || "Tactics";
+    const totalMoves = Math.ceil(currentPuzzle.m.split(' ').length / 2);
+
+    const layerDisplay = fConfig.name === "Hell" ? `<span style="color:#ef4444;">Hell</span>` : fConfig.name;
+
+    window.activeBoard = new PuzzleBoard("de-container", {
+        isFirstPuzzle: (deState.idx === 0), 
+        themeHidden: false, 
+        themeName: themeStr,
+        puzzleData: currentPuzzle,
+        blindLevel: 0,
+        topBar: { labelLeft: "Depth", valLeft: layerDisplay, labelRight: "Wave", valRight: fConfig.waveNum }, 
+        actions: [],
+        onComplete: async (timeMs) => {
+            deState.idx++;
+            await setDB("m4pda", deState); // Instantly log progress so they can safely leave
+            await logPuzzleResult(4, 0, currentPuzzle.t, currentPuzzle.tier, currentPuzzle.i, timeMs);
+            
+            if (deState.idx >= totalPuzzlesForFloor) {
+                triggerFloorClear();
+            } else {
+                setTimeout(() => window.loadNextEscalatorPuzzle(), 500); 
+            }
+        },
+        onFail: async (timeMs) => {
+            deState.failed = true;
+            await setDB("m4pda", deState); // Instantly log failure to prevent reload cheating
+            await logPuzzleResult(4, 1, currentPuzzle.t, currentPuzzle.tier, currentPuzzle.i, timeMs);
+            
+            document.getElementById(`dot-${deState.idx}`).classList.add("wrong");
+            document.getElementById(`dot-${deState.idx}`).classList.remove("active");
+
+            document.getElementById("action-container").innerHTML = `
+                <button class="action-btn" onclick="window.activeBoard.playSolution()">Show Solution</button>
+                <button class="action-btn" style="background:var(--purple); border-color:var(--purple);" onclick="window.triggerFloorFail()">Continue</button>
+            `;
+        }
+    });
+}
+window.loadNextEscalatorPuzzle = loadNextEscalatorPuzzle;
+
+function triggerFloorClear() {
+    if (window.activeBoard && window.activeBoard.boardClickArea) {
+        window.activeBoard.boardClickArea.style.pointerEvents = 'none';
+    }
+    document.getElementById("floorClearModal").classList.remove("hidden");
+}
+
+window.triggerFloorFail = () => {
+    document.getElementById("floorFailModal").classList.remove("hidden");
+};
+
+window.ascendToNextFloor = async () => {
+    document.getElementById("floorClearModal").classList.add("hidden");
+    deState.floor++;
+    deState.idx = 0;
+    deState.failed = false;
+    await setDB("m4pda", deState);
+    
+    document.getElementById("de-container").innerHTML = '<div style="text-align:center; padding:40px;"><div class="spinner"></div><h3 style="color:var(--purple); margin:0;">Descending Deeper...</h3></div>';
+    await buildEscalatorQueue();
+    loadNextEscalatorPuzzle();
+};
+
+window.restartCurrentFloor = async () => {
+    document.getElementById("floorFailModal").classList.add("hidden");
+    deState.idx = 0;
+    deState.failed = false;
+    await setDB("m4pda", deState);
+    
+    document.getElementById("de-container").innerHTML = '<div style="text-align:center; padding:40px;"><div class="spinner"></div><h3 style="color:var(--purple); margin:0;">Rebuilding Wave...</h3></div>';
+    await buildEscalatorQueue(); 
+    loadNextEscalatorPuzzle();
+};
+</script>
+</body>
+</html>

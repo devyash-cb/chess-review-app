@@ -1,0 +1,176 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Analyzing · Chess Review</title>
+<link rel="stylesheet" href="styles.css">
+<style>
+:root{--sq-light:#ebecd0;--sq-dark:#739552}
+.topbar{display:flex;align-items:center;justify-content:space-between;padding:12px 16px;background:var(--panel);border-bottom:1px solid var(--line)}
+.topbar-center{text-align:center;flex:1}
+.topbar-center h1{margin:0;font-size:18px}
+.coach-container{display:flex;align-items:flex-start;gap:12px;margin:16px auto;width:100%;max-width:500px}
+.coach-avatar{width:60px;height:60px;border-radius:8px;object-fit:cover;background:var(--panel2);border:1px solid var(--line)}
+.coach-bubble{flex:1;background:#f4f0fa;color:#15121d;padding:14px 40px 14px 14px;border-radius:12px;border-top-left-radius:0;position:relative;font-size:14px;font-weight:600;min-height:60px;display:flex;align-items:center;box-shadow:0 4px 12px rgba(0,0,0,0.2)}
+.mute-btn{position:absolute;top:8px;right:8px;background:transparent;border:none;cursor:pointer;width:26px;height:26px;padding:2px;opacity:0.7;transition:opacity 0.2s}
+.mute-btn:active{opacity:1}
+.mute-btn img{width:100%;height:100%}
+.chessboard-wrapper{position:relative;width:100%;max-width:500px;aspect-ratio:1/1;border:2px solid var(--line);border-radius:6px;overflow:hidden;margin:0 auto}
+.chessboard{display:grid;grid-template-columns:repeat(8,1fr);grid-template-rows:repeat(8,1fr);width:100%;height:100%}
+.square{display:flex;align-items:center;justify-content:center;position:relative}
+.square.light{background-color:var(--sq-light)}
+.square.dark{background-color:var(--sq-dark)}
+.piece-layer{position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:5}
+.piece{position:absolute;width:12.5%;height:12.5%;background-size:95%;background-repeat:no-repeat;background-position:center;transition:transform var(--move-duration,0.3s) ease-in-out}
+.playback-bar-container{width:100%;max-width:500px;height:6px;background:var(--line);border-radius:4px;margin:20px auto 0 auto;overflow:hidden}
+.playback-bar-fill{height:100%;width:0%;background:var(--purple);transition:width 0.3s linear}
+.modal-overlay{position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.85);display:flex;align-items:center;justify-content:center;z-index:1000}
+.modal-box{background:var(--panel);border:1px solid var(--line);padding:20px;border-radius:12px;width:90%;max-width:380px;text-align:left;max-height:85vh;overflow-y:auto;box-sizing:border-box}
+.modal-box h3{margin-top:0;text-align:center}
+.modal-box label{display:block;font-size:13px;font-weight:600;margin-top:14px;margin-bottom:6px;color:#d6cee0}
+.modal-box input[type="range"]{width:100%;accent-color:var(--purple)}
+.modal-box input[type="number"]{width:100%;padding:8px;background:#0c0a11;color:white;border:1px solid var(--line);border-radius:6px;box-sizing:border-box}
+.range-val{float:right;font-size:12px;color:var(--purple)}
+.toggle-row{display:flex;justify-content:space-between;align-items:center;margin-top:10px}
+.toggle-row input{transform:scale(1.3);accent-color:var(--purple)}
+.row-actions{display:flex;gap:10px;margin-top:20px}
+.row-actions button{flex:1;padding:10px;border-radius:6px;font-weight:bold;cursor:pointer}
+.hidden{display:none!important}
+</style>
+</head>
+<body>
+<header class="topbar">
+<a class="icon-btn" href="#" id="uiBackBtn" aria-label="Back">←</a>
+<div class="topbar-center"><div class="eyebrow">CHESS REVIEW</div><h1>Analyzing Game</h1></div>
+<button class="icon-btn" id="uiSettingsBtn" aria-label="Settings" style="background:transparent;border:none;font-size:20px;cursor:pointer;color:#fff">⚙️</button>
+</header>
+<main class="page">
+<div class="coach-container">
+<img src="pieces/coach.png" class="coach-avatar" alt="Coach" onerror="this.src='data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI2MCIgaGVpZ2h0PSI2MCI+PHJlY3Qgd2lkdGg9IjYwIiBoZWlnaHQ9IjYwIiBmaWxsPSIjNDQiLz48dGV4dCB4PSI1MCUiIHk9IjUwJSIgZmlsbD0iI2ZmZiIgZHk9Ii4zZW0iIHRleHQtYW5jaG9yPSJtaWRkbGUiPkM8L3RleHQ+PC9zdmc+'">
+<div class="coach-bubble"><span id="coachText">Warming up the engine...</span><button id="muteBtn" class="mute-btn"><img id="muteIcon" src="pieces/unmute.png" alt="Mute" onerror="this.style.display='none'"></button></div>
+</div>
+<div class="chessboard-wrapper" id="boardWrapper"><div id="chessboard" class="chessboard"></div><div id="piece-layer" class="piece-layer"></div></div>
+<div class="playback-bar-container"><div id="visualProgressBar" class="playback-bar-fill"></div></div>
+</main>
+<div id="settingsModal" class="modal-overlay hidden">
+<div class="modal-box">
+<h3 style="color:var(--purple)">Review Preferences</h3>
+<div class="toggle-row"><span style="font-size:13px;font-weight:600;color:#d6cee0">Voice Audio Commentary</span><input type="checkbox" id="cfgVoiceEnabled"></div>
+<label>Move Animation Speed <span class="range-val" id="valMoveSpeed">0.4s</span></label><input type="range" id="cfgMoveSpeed" min="0.2" max="1.0" step="0.2" value="0.4">
+<label>Text Reading Duration <span class="range-val" id="valReadingTime">3s</span></label><input type="range" id="cfgReadingTime" min="2" max="10" step="1" value="3">
+<label>Voice Speech Speed <span class="range-val" id="valSpeechRate">1.0x</span></label><input type="range" id="cfgSpeechRate" min="1.0" max="2.5" step="0.25" value="1.0">
+<div class="row-actions"><button id="closeSettingsBtn" class="primary-btn" style="background:var(--purple);border:none;color:white">Save & Close</button></div>
+</div>
+</div>
+<div id="devModal" class="modal-overlay hidden">
+<div class="modal-box">
+<h3 style="color:var(--purple)">Developer Mode</h3>
+<p class="muted" style="font-size:14px">Welcome Itz_yash8636. Enter a fixed depth for fast testing.</p>
+<input type="number" id="devDepthInput" value="12" min="1" max="24">
+<div class="row-actions"><button id="devSaveBtn" class="primary-btn" style="background:var(--purple);color:white;border:none">Set Depth</button><button id="devNormalBtn" class="ghost-btn" style="background:#332d42;color:white;border:none">Normal</button></div>
+</div>
+</div>
+<div id="backModal" class="modal-overlay hidden">
+<div class="modal-box" style="text-align:center">
+<h3 style="color:var(--red)">Stop Analysis?</h3>
+<p class="muted" style="font-size:14px">Your progress up to this move is saved in local database.</p>
+<div class="row-actions"><button id="confirmBackBtn" class="primary-btn" style="background:var(--red);color:white;border:none">Stop & Leave</button><button id="cancelBackBtn" class="ghost-btn" style="background:#332d42;color:white;border:none">Continue</button></div>
+</div>
+</div>
+<script type="module">
+import{Chess}from'./chess.js';import{getBookMoves}from'./polyglot-book.js';
+function trace(m,isE=false){const t=isE?"ERROR":"TRACE";try{let l=JSON.parse(localStorage.getItem("chessReviewErrorLogs")||"[]");l.unshift({time:new Date().toLocaleTimeString(),type:t,msg:m});if(l.length>100)l.pop();localStorage.setItem("chessReviewErrorLogs",JSON.stringify(l));}catch(e){}}
+function sysLog(s,d={}){try{let l=JSON.parse(localStorage.getItem("chessEngineLogs")||"[]");l.push({time:new Date().toLocaleTimeString(),step:s,...d});if(l.length>150)l.shift();localStorage.setItem("chessEngineLogs",JSON.stringify(l));}catch(e){}}
+window.addEventListener("error",(e)=>trace(`Global Error: ${e.message} at ${e.filename}:${e.lineno}`,true));
+window.addEventListener("unhandledrejection",(e)=>trace(`Unhandled Promise: ${e.reason}`,true));
+let game=null,commentsDB=null,bookBuffer=null,pieceSetDB=null,normalizedEcoDB={};
+let isMuted=false,isEngineComplete=false,devFixedDepth=null;
+const isMulti=typeof SharedArrayBuffer!=='undefined'&&typeof window!=='undefined'&&window.crossOriginIsolated;
+let maxThreads=isMulti?(navigator.hardwareConcurrency||2):1;
+let baseDepth=maxThreads>=8?20:(maxThreads>=4?16:12);
+let analysisIndex=0,visualIndex=0,currentUtterance=null,isUserPerspective=false;
+let appSettings={username:"",ttsVoiceEnabled:true,moveSpeed:0.4,readingDuration:3,speechRate:1.0,wHexCode:"#ebecd0",bHexCode:"#739552",activePieceSet:"Piece-set-1"};
+function loadSettings(){try{const s=JSON.parse(localStorage.getItem("chessReviewSettings")||"{}");appSettings={...appSettings,...s};}catch(e){}document.documentElement.style.setProperty('--sq-light',appSettings.wHexCode||'#ebecd0');document.documentElement.style.setProperty('--sq-dark',appSettings.bHexCode||'#739552');document.documentElement.style.setProperty('--move-duration',`${appSettings.moveSpeed}s`);isMuted=!appSettings.ttsVoiceEnabled;updateMuteIcon();}
+function saveSettings(){try{localStorage.setItem("chessReviewSettings",JSON.stringify(appSettings));}catch(e){}}
+function updateMuteIcon(){document.getElementById("muteIcon").src=isMuted?"pieces/mute.png":"pieces/unmute.png";}
+document.addEventListener("DOMContentLoaded",async()=>{
+loadSettings();
+const bm=document.getElementById('backModal'),sm=document.getElementById('settingsModal');
+try{if(window.Capacitor&&window.Capacitor.Plugins&&window.Capacitor.Plugins.App){window.Capacitor.Plugins.App.addListener('backButton',()=>{if(!sm.classList.contains("hidden"))sm.classList.add("hidden");else if(!document.getElementById("devModal").classList.contains("hidden"))document.getElementById("devModal").classList.add("hidden");else bm.classList.remove('hidden');});}}catch(e){}
+document.getElementById("uiBackBtn").onclick=(e)=>{e.preventDefault();bm.classList.remove('hidden');};
+document.getElementById("cancelBackBtn").onclick=()=>bm.classList.add('hidden');
+document.getElementById("confirmBackBtn").onclick=()=>window.location.href="home.html";
+document.getElementById("uiSettingsBtn").onclick=()=>{syncSettingsToModal();sm.classList.remove('hidden');};
+document.getElementById("closeSettingsBtn").onclick=()=>{commitSettingsFromModal();sm.classList.add('hidden');};
+document.getElementById("muteBtn").onclick=()=>{isMuted=!isMuted;appSettings.ttsVoiceEnabled=!isMuted;saveSettings();updateMuteIcon();if(isMuted&&window.speechSynthesis)window.speechSynthesis.cancel();};
+bindSettingsSliders();
+const p=new URLSearchParams(location.search);const gId=p.get("gameId");if(!gId)return alert("No game ID provided.");
+try{
+let loc=JSON.parse(localStorage.getItem("chessReviewGames")||"[]");
+const i=loc.findIndex(g=>g.id===gId);
+if(i!==-1){game=loc[i];await saveGameToDB(game);loc.splice(i,1);localStorage.setItem("chessReviewGames",JSON.stringify(loc));}
+else{game=await new Promise((r)=>{const req=indexedDB.open("ChessReviewDB",3);req.onsuccess=()=>{const db=req.result;if(!db.objectStoreNames.contains("games"))return r(null);const gr=db.transaction("games","readonly").objectStore("games").get(gId);gr.onsuccess=()=>r(gr.result);gr.onerror=()=>r(null);};req.onerror=()=>r(null);});}
+if(!game)return alert("Game not found.");
+if(!game.moves&&game.pgn){const t=new Chess();t.loadPgn(game.pgn);const h=t.history({verbose:true});const rc=new Chess();game.moves=[];for(let m of h){let fb=rc.fen();rc.move(m.san);game.moves.push({san:m.san,uci:m.from+m.to+(m.promotion||''),from:m.from,to:m.to,fenBefore:fb,fenAfter:rc.fen()});}await saveGameToDB(game);}
+analysisIndex=game.moves.findIndex(m=>m.eval===undefined);if(analysisIndex===-1)analysisIndex=game.moves.length;
+const u=(appSettings.username||"").toLowerCase().trim();const wP=(game.white||"").toLowerCase().trim();const bP=(game.black||"").toLowerCase().trim();
+isUserPerspective=(u!==""&&(u===wP||u===bP));
+}catch(e){}
+createBoardGrid();
+try{const[c,b,ea,eb,ps]=await Promise.all([fetch('comments.json').catch(()=>null),fetch('book.bin').catch(()=>null),fetch('ecoA.json').catch(()=>null),fetch('ecoB.json').catch(()=>null),fetch('pieces.json').catch(()=>null)]);if(c&&c.ok)commentsDB=await c.json();if(b&&b.ok)bookBuffer=await b.arrayBuffer();if(ps&&ps.ok)pieceSetDB=await ps.json();let re={};if(ea&&ea.ok)Object.assign(re,await ea.json());if(eb&&eb.ok)Object.assign(re,await eb.json());for(let k in re){const bf=k.split(" ").slice(0,4).join(" ");normalizedEcoDB[bf]=re[k].name;}}catch(e){trace(e.message,true);}
+if(game&&game.moves&&game.moves.length>0)renderPieces(game.moves[0].fenBefore);
+if((appSettings.username||"").toLowerCase().trim()==="itz_yash8636"){const dm=document.getElementById("devModal");dm.classList.remove("hidden");document.getElementById("devSaveBtn").onclick=()=>{devFixedDepth=parseInt(document.getElementById("devDepthInput").value);dm.classList.add("hidden");startPipelines();};document.getElementById("devNormalBtn").onclick=()=>{dm.classList.add("hidden");startPipelines();};}else{startPipelines();}
+});
+function syncSettingsToModal(){document.getElementById("cfgVoiceEnabled").checked=appSettings.ttsVoiceEnabled;document.getElementById("cfgMoveSpeed").value=appSettings.moveSpeed;document.getElementById("valMoveSpeed").textContent=`${appSettings.moveSpeed}s`;document.getElementById("cfgReadingTime").value=appSettings.readingDuration;document.getElementById("valReadingTime").textContent=`${appSettings.readingDuration}s`;document.getElementById("cfgSpeechRate").value=appSettings.speechRate;document.getElementById("valSpeechRate").textContent=`${appSettings.speechRate}x`;}
+function commitSettingsFromModal(){appSettings.ttsVoiceEnabled=document.getElementById("cfgVoiceEnabled").checked;appSettings.moveSpeed=parseFloat(document.getElementById("cfgMoveSpeed").value);appSettings.readingDuration=parseInt(document.getElementById("cfgReadingTime").value);appSettings.speechRate=parseFloat(document.getElementById("cfgSpeechRate").value);isMuted=!appSettings.ttsVoiceEnabled;updateMuteIcon();document.documentElement.style.setProperty('--move-duration',`${appSettings.moveSpeed}s`);saveSettings();}
+function bindSettingsSliders(){document.getElementById("cfgMoveSpeed").oninput=(e)=>document.getElementById("valMoveSpeed").textContent=`${e.target.value}s`;document.getElementById("cfgReadingTime").oninput=(e)=>document.getElementById("valReadingTime").textContent=`${e.target.value}s`;document.getElementById("cfgSpeechRate").oninput=(e)=>document.getElementById("valSpeechRate").textContent=`${e.target.value}x`;}
+function startPipelines(){runBackgroundAnalysis();runVisualLoop();}
+function winPercent(cp){return 100/(1+Math.exp(-0.00368208*cp*100));}
+async function runBackgroundAnalysis(){
+sysLog("Wait Page Init",{isMulti,maxThreads,baseDepth});
+let engine;
+try{engine=new Worker(isMulti?'stockfish/stockfish.js':'stockfish/stockfish-19-lite-single.js');engine.onerror=(e)=>sysLog(`Engine Error: ${e.message}`);}catch(e){try{engine=new Worker('stockfish/stockfish-19-lite-single.js');maxThreads=1;sysLog("Worker Fallback",{maxThreads:1});}catch(err){return;}}
+engine.postMessage("uci");engine.postMessage("setoption name Hash value 256");engine.postMessage(`setoption name Threads value ${maxThreads}`);engine.postMessage("setoption name MultiPV value 2");engine.postMessage("isready");
+for(let i=analysisIndex;i<game.moves.length;i++){
+let m=game.moves[i];let f=m.fenBefore;let t=devFixedDepth||baseDepth;
+if(!devFixedDepth){const pC=(f.match(/[a-zA-Z]/g)||[]).filter(c=>c.toLowerCase()!=='p').length;if(pC<=6&&t>12)t-=2;}
+m.ply=i+1;m.moveNum=Math.ceil((i+1)/2);
+let iB=await checkLocalBookBin(f,m.uci);
+if(iB){m.eval=0;m.classification="book";}else{
+const res=await evaluatePosition(engine,f,t);
+m.eval=res.eval;m.winPercent=winPercent(res.eval);m.best1=res.best1;m.followup1=res.pv1;m.best1Eval=res.eval;m.best1WinPct=winPercent(res.eval);m.best2=res.best2;m.followup2=res.pv2;m.best2Eval=res.eval2;m.best2WinPct=winPercent(res.eval2);m.targetDepth=t;
+}
+analysisIndex=i+1;await saveGameToDB(game);
+}
+game.status="partially completed";await saveGameToDB(game);isEngineComplete=true;
+}
+function evaluatePosition(eg,f,d){
+return new Promise((r)=>{
+let bP1="",bP2="",bE=0,b2E=0;
+eg.onmessage=(e)=>{
+const l=e.data;const i1=l.includes(" multipv 1 ");const i2=l.includes(" multipv 2 ");
+if(i1&&l.includes(" pv "))bP1=l.match(/\bpv (.+)$/)?.[1]||bP1;if(i2&&l.includes(" pv "))bP2=l.match(/\bpv (.+)$/)?.[1]||bP2;
+if(i1){if(l.includes("score cp "))bE=parseInt(l.match(/\bscore cp (-?\d+)/)[1])/100;if(l.includes("score mate "))bE=parseInt(l.match(/\bscore mate (-?\d+)/)[1])>0?100:-100;}
+if(i2){if(l.includes("score cp "))b2E=parseInt(l.match(/\bscore cp (-?\d+)/)[1])/100;if(l.includes("score mate "))b2E=parseInt(l.match(/\bscore mate (-?\d+)/)[1])>0?100:-100;}
+if(l.startsWith("bestmove")){if(f.split(' ')[1]==='b'){bE=-bE;b2E=-b2E;}const b1=bP1?bP1.split(" ")[0]:null;const b2=bP2?bP2.split(" ")[0]:null;r({eval:Number(bE.toFixed(2)),eval2:Number(b2E.toFixed(2)),pv1:bP1.trim(),pv2:bP2.trim(),best1:b1,best2:b2});}
+};
+eg.postMessage("stop");eg.postMessage(`position fen ${f}`);eg.postMessage(`go depth ${d}`);
+});
+}
+async function saveGameToDB(gO){return new Promise((r)=>{try{const req=indexedDB.open("ChessReviewDB",3);req.onsuccess=()=>{const db=req.result;if(!db.objectStoreNames.contains("games"))return r();const tx=db.transaction("games","readwrite");tx.objectStore("games").put(gO);tx.oncomplete=()=>{db.close();r();};tx.onerror=()=>r();};req.onerror=()=>r();}catch(e){r();}});}
+function identifyOpening(mP){if(Object.keys(normalizedEcoDB).length===0)return"Unidentified Opening";for(let i=mP-1;i>=0;i--){const f=game.moves[i].fenAfter;const bF=f.split(" ").slice(0,4).join(" ");if(normalizedEcoDB[bF])return normalizedEcoDB[bF];}return"Unidentified Opening";}
+async function runVisualLoop(){const sT=Date.now();let fS=0;const pB=document.getElementById("visualProgressBar");const tP=Math.max(1,Math.floor(game.moves.length*0.30));while(true){let e=(Date.now()-sT)/1000;if(e>=10||analysisIndex>=tP)break;if(commentsDB&&commentsDB.idle_facts){const f=commentsDB.idle_facts[fS%commentsDB.idle_facts.length];updateCoach(f);await smartSpeak(f,3000);fS++;}else{await sleep(1000);}}const iO=identifyOpening(Math.min(10,game.moves.length));const gP=isUserPerspective?(commentsDB?.greetings?.own_game||["Let's review."]):(commentsDB?.greetings?.other_game||["Let's review."]);const gr=gP[Math.floor(Math.random()*gP.length)];const oI=iO!=="Unidentified Opening"?`${gr} You played the ${iO}.`:`${gr} Let's dive into the opening.`;updateCoach(oI);await smartSpeak(oI,appSettings.readingDuration*1000);while(visualIndex<game.moves.length){while(analysisIndex<=visualIndex&&!isEngineComplete){updateCoach("Calculating next move...",true);await sleep(200);}const m=game.moves[visualIndex];renderPieces(m.fenAfter);pB.style.width=`${((visualIndex+1)/game.moves.length)*100}%`;let c=buildMoveReaction(m,visualIndex);updateCoach(c);await smartSpeak(c,appSettings.readingDuration*1000);visualIndex++;if(isEngineComplete){if(window.speechSynthesis)window.speechSynthesis.cancel();isMuted=true;document.documentElement.style.setProperty('--move-duration','0.05s');while(visualIndex<game.moves.length){const fM=game.moves[visualIndex];renderPieces(fM.fenAfter);pB.style.width=`${((visualIndex+1)/game.moves.length)*100}%`;await sleep(50);visualIndex++;}break;}}updateCoach("Calculations complete! Redirecting to report...");game.opening=identifyOpening(game.moves.length);await saveGameToDB(game);await sleep(600);window.location.href=`analysis.html?gameId=${game.id}`;}
+function buildMoveReaction(m,p){if(!commentsDB)return`Move ${Math.ceil((p+1)/2)}: ${m.san}`;const pr=isUserPerspective?commentsDB.reactions.user:commentsDB.reactions.other;if(m.classification==="book")return`Move ${Math.ceil((p+1)/2)}: ${m.san} is a recognized book move.`;if(p>0){const pE=game.moves[p-1].eval||0;const cE=m.eval||0;const iW=(p%2===0);const eL=iW?(pE-cE):(cE-pE);const bM=m.best1||"a better continuation";if(eL>=2.0)return(pr.eval_drop_major||pr.blundered_material)[Math.floor(Math.random()*(pr.eval_drop_major||pr.blundered_material).length)].replace("{best_move}",bM);if(eL>=0.6)return pr.eval_drop_minor[Math.floor(Math.random()*pr.eval_drop_minor.length)].replace("{best_move}",bM);if(eL<=0.05&&m.best1===m.uci)return pr.perfect_move[Math.floor(Math.random()*pr.perfect_move.length)];}return`Move ${Math.ceil((p+1)/2)}: ${m.san} played.`;}
+function updateCoach(t){document.getElementById("coachText").textContent=t;}
+function smartSpeak(t,d){return new Promise(r=>{if(isMuted||!appSettings.ttsVoiceEnabled||!window.speechSynthesis){setTimeout(r,d);return;}window.speechSynthesis.cancel();currentUtterance=new SpeechSynthesisUtterance(t);currentUtterance.rate=appSettings.speechRate||1.0;currentUtterance.onend=()=>{currentUtterance=null;r();};currentUtterance.onerror=()=>{currentUtterance=null;r();};try{window.speechSynthesis.speak(currentUtterance);}catch(e){r();}});}
+function sleep(ms){return new Promise(r=>setTimeout(r,ms));}
+const bE=document.getElementById("chessboard"),pL=document.getElementById("piece-layer");
+function createBoardGrid(){bE.innerHTML="";for(let r=8;r>=1;r--){for(let f=0;f<8;f++){const sq=document.createElement("div");sq.className=`square ${(r+f)%2!==0?'light':'dark'}`;bE.appendChild(sq);}}}
+function getPieceUrl(c,t){let pK=c+t;if(pieceSetDB&&pieceSetDB[appSettings.activePieceSet]){const cf=pieceSetDB[appSettings.activePieceSet];return`${cf.src_path}${cf.pieces[pK]}`;}return`pieces/${pK}.png`;}
+function renderPieces(f){try{const tC=new Chess(f);pL.innerHTML="";const bA=tC.board();for(let r=0;r<8;r++){for(let f=0;f<8;f++){if(bA[r][f]){const p=document.createElement("div");p.className="piece";p.style.backgroundImage=`url(${getPieceUrl(bA[r][f].color,bA[r][f].type)})`;p.style.transform=`translate(${f*100}%, ${r*100}%)`;pL.appendChild(p);}}}}catch(e){}}
+async function checkLocalBookBin(f,u){if(!bookBuffer)return false;try{return getBookMoves(f,bookBuffer).some(m=>m.uci===u);}catch(e){return false;}}
+</script>
+<script src="debugger.js"></script>
+</body>
+</html>

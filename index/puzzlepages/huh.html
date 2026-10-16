@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>DB Inspector · Chess Review</title>
+<link rel="stylesheet" href="../styles.css">
+<style>
+    :root { --sq-light: #ebecd0; --sq-dark: #739552; }
+    body { padding: 10px; background: #111; color: #fff; font-family: sans-serif; padding-bottom: 50px; }
+    
+    .topbar { display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; background: #1c1a24; border-bottom: 1px solid #332d42; margin-bottom: 15px; border-radius: 8px;}
+    .topbar-center h1 { margin: 0; font-size: 16px; color: #a855f7; }
+    .icon-btn { background: transparent; border: none; color: #fff; font-size: 20px; cursor: pointer; text-decoration: none; padding: 0; }
+
+    .db-card { background: #1c1a24; border: 1px solid #332d42; border-radius: 8px; margin-bottom: 10px; overflow: hidden; }
+    .db-summary { padding: 12px 16px; font-weight: 900; font-size: 14px; color: #fff; cursor: pointer; background: #2a2735; display: flex; justify-content: space-between; align-items: center; outline: none; }
+    .db-summary::-webkit-details-marker { display: none; }
+    .db-summary:hover { background: #332d42; }
+    
+    .db-key { color: #a855f7; font-family: monospace; font-size: 15px; }
+    .db-type { font-size: 11px; color: #888; text-transform: uppercase; font-weight: bold; background: rgba(0,0,0,0.3); padding: 4px 8px; border-radius: 4px; }
+    
+    .db-content { padding: 12px 16px; overflow-x: auto; font-family: monospace; font-size: 12px; color: #a3e635; background: #0c0a11; margin: 0; line-height: 1.5; }
+
+    .status-text { text-align: center; color: #888; font-size: 14px; margin-top: 30px; font-weight: bold; }
+    .action-btn { background: #a855f7; border: none; padding: 8px 16px; border-radius: 6px; color: #fff; cursor: pointer; font-weight: bold; font-size: 13px; }
+    .action-btn:active { opacity: 0.8; }
+</style>
+</head>
+<body>
+
+<div style="max-width: 800px; margin: 0 auto;">
+    <header class="topbar">
+        <a class="icon-btn" href="../puzzle.html">←</a>
+        <div class="topbar-center"><h1>IndexedDB Inspector</h1></div>
+        <button class="action-btn" onclick="fetchDatabase()">Refresh 🔄</button>
+    </header>
+
+    <div id="db-container">
+        <div class="status-text" id="statusMsg">Connecting to ChessReviewDB...</div>
+    </div>
+</div>
+
+<script>
+const DB_VERSION = 3;
+
+function formatValue(val) {
+    if (val === null) return "null";
+    if (val === undefined) return "undefined";
+    if (typeof val === 'object') {
+        return JSON.stringify(val, null, 4);
+    }
+    return String(val);
+}
+
+function getType(val) {
+    if (val === null) return "null";
+    if (Array.isArray(val)) return `Array [${val.length}]`;
+    if (typeof val === 'object') return `Object {${Object.keys(val).length}}`;
+    return typeof val;
+}
+
+function fetchDatabase() {
+    const container = document.getElementById("db-container");
+    container.innerHTML = '<div class="status-text">Reading database...</div>';
+
+    const req = indexedDB.open("ChessReviewDB", DB_VERSION);
+
+    req.onerror = (e) => {
+        container.innerHTML = `<div class="status-text" style="color:#ef4444;">Error opening DB: ${e.target.error}</div>`;
+    };
+
+    req.onsuccess = (e) => {
+        const db = e.target.result;
+        
+        if (!db.objectStoreNames.contains("puzzles")) {
+            container.innerHTML = '<div class="status-text">Object store "puzzles" not found.</div>';
+            return;
+        }
+
+        const tx = db.transaction("puzzles", "readonly");
+        const store = tx.objectStore("puzzles");
+        const getAllReq = store.getAll();
+
+        getAllReq.onsuccess = () => {
+            const data = getAllReq.result;
+            if (!data || data.length === 0) {
+                container.innerHTML = '<div class="status-text">Database is completely empty.</div>';
+                return;
+            }
+
+            // Sort keys alphabetically so it's easy to read
+            data.sort((a, b) => String(a.key).localeCompare(String(b.key)));
+
+            let html = `<div style="margin-bottom:15px; font-size:12px; color:#888; text-align:right;">Total Keys: ${data.length}</div>`;
+            
+            data.forEach(item => {
+                const keyStr = item.key;
+                const typeStr = getType(item.val);
+                const valStr = formatValue(item.val);
+
+                html += `
+                    <details class="db-card">
+                        <summary class="db-summary">
+                            <span class="db-key">${keyStr}</span>
+                            <span class="db-type">${typeStr}</span>
+                        </summary>
+                        <pre class="db-content">${valStr}</pre>
+                    </details>
+                `;
+            });
+
+            container.innerHTML = html;
+        };
+
+        getAllReq.onerror = () => {
+            container.innerHTML = '<div class="status-text" style="color:#ef4444;">Error reading data.</div>';
+        };
+    };
+}
+
+document.addEventListener("DOMContentLoaded", fetchDatabase);
+</script>
+</body>
+</html>

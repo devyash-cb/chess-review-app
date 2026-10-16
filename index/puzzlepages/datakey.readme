@@ -1,0 +1,31 @@
+# Chess Review App - IndexedDB Key Dictionary
+**Database Name:** `ChessReviewDB` | **Version:** `3` | **ObjectStore:** `puzzles`
+
+This document maps every key used by `pstore.js` across the application to ensure data is properly segregated and managed.
+
+## 0. Global & Aggregate Stats (Used in `puzzle.html`)
+* `totalPlayed` (Int): Total number of puzzles attempted across all modes.
+* `totalWon` (Int): Total number of puzzles solved correctly.
+* `totalWrong` (Int): Total number of missed puzzles.
+* `totalSkipped` (Int): Total number of puzzles skipped via the "I give up" button.
+* `puzzleHistory` (Array): Chronological log of recent puzzles. Format: `[{m: modeId, p: statusMask, t: themeId, tr: tier, i: puzzleIdx, ts: timestamp, d: durationMs}, ...]`
+* `mistakeArchive` (Dict): Active dictionary of wrong puzzles for spaced repetition. Key format: `themeId_tier_puzzleIdx`.
+* `skippedArchive` (Dict): Active dictionary of skipped puzzles. Key format: `themeId_tier_puzzleIdx`.
+* `playedPuzzlesSet` (Dict): Global tracking to prevent seeing the exact same puzzle index twice in randomized modes.
+
+## 1. Mode 1: Ranked Climb (`rc.html`)
+* `m1pda` (Object): Active session state. Format: `{ rating: 1304.5, playedCount: 14 }`.
+* `m1Queue` (Array): Prefetched queue of upcoming puzzles to eliminate loading latency.
+
+## 2. Mode 3: Theme Mastery (`tm.html`)
+* `rkey` (Object): The initialization payload passed from `puzzle.html`. Format: `{mode: 3, themes: [1, 5, 12], minElo: 1300, maxElo: 1500}`.
+* `m3state` (Object): The persistent sequential state. Tracks current index pointer for *every single theme and tier* so the user can seamlessly resume where they left off.
+* `m3p0`, `m3p1`, `m3p2`... (Object): The dynamically generated sequence keys. Stores exactly one cached puzzle object per key. Mimics the `m1p1` loop style to preserve exact sequential flow.
+
+## 3. Other Modes (Placeholder Examples)
+* `m2pda` (Object): 3-Strike Run state tracking `bestStreak`.
+* `m4pda` (Object): Depth Escalator tracking `floor`.
+* `m5pda` (Object): Puzzle Sprint tracking `highScore`.
+* `m6pda` (Object): Blindfold Tactics tracking `level` and `themeId`.
+* `m7pda` (Object): Daily Gauntlet tracking `streak`.
+* `dailyCompleted` (Dict): Tracks completed calendar days `YYYY-MM-DD : true`.

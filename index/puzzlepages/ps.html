@@ -1,0 +1,366 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Puzzle Sprint · Chess Review</title>
+<link rel="stylesheet" href="../styles.css">
+<style>
+    :root { --sq-light: #ebecd0; --sq-dark: #739552; --move-duration: 0.3s; }
+    body { padding: 10px; }
+    
+    .topbar { display: flex; align-items: center; justify-content: space-between; padding: 10px 16px; background: var(--panel); border-bottom: 1px solid var(--line); margin-bottom: 15px; border-radius: 8px;}
+    .topbar-center h1 { margin: 0; font-size: 16px; }
+    .icon-btn { background: transparent; border: none; color: #fff; font-size: 20px; cursor: pointer; text-decoration: none; padding: 0; }
+
+    #ps-container { display: flex; flex-direction: column; width: 100%; max-width: 500px; margin: 0 auto; }
+    
+    .board-layout-wrapper { display: flex; align-items: center; justify-content: center; width: 100%; max-width: 500px; height: auto; max-height: 55vh; margin: 0 auto 15px auto; }
+    .chessboard-wrapper { width: 100%; height: 100%; aspect-ratio: 1/1; max-height: 55vh; max-width: 55vh; position: relative; border: 2px solid var(--line); border-radius: 6px; overflow: hidden; box-shadow: 0 4px 14px rgba(0,0,0,0.4); cursor: pointer; }
+    
+    .chessboard { display: grid; grid-template-columns: repeat(8, 1fr); grid-template-rows: repeat(8, 1fr); width: 100%; height: 100%; z-index: 1; position: relative;}
+    .square { position: relative; display: flex; align-items: center; justify-content: center; }
+    .square.light { background-color: var(--sq-light); }
+    .square.dark { background-color: var(--sq-dark); }
+    
+    .coord-rank { position: absolute; top: 2px; left: 3px; font-size: 10px; font-weight: 800; z-index: 2; pointer-events: none; }
+    .coord-file { position: absolute; bottom: 1px; right: 3px; font-size: 10px; font-weight: 800; z-index: 2; pointer-events: none; }
+    .light .coord-text { color: var(--sq-dark); opacity: 0.8;}
+    .dark .coord-text { color: var(--sq-light); opacity: 0.8;}
+
+    .highlight-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; opacity: 0.6; z-index: 1; display: none; }
+    .legal-dot { position: absolute; width: 32%; height: 32%; background: rgba(0,0,0,0.25); border-radius: 50%; z-index: 6; pointer-events: none; }
+    .piece-layer { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 5; }
+    .piece { position: absolute; width: 12.5%; height: 12.5%; background-size: 95%; background-repeat: no-repeat; background-position: center; transition: transform var(--move-duration) ease-in-out, opacity 0.2s ease; pointer-events: none; }
+    .badge-layer { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 10; }
+    .floating-badge { position: absolute; width: 22px; height: 22px; margin-top: -6px; margin-left: -6px; z-index: 10; background: transparent; filter: drop-shadow(0 2px 4px rgba(0,0,0,0.5)); transition: transform var(--move-duration) ease-in-out;}
+    
+    .c-best, .c-excellent { background-color: #84cc16; }
+    .c-brilliant { background-color: #1cb0a6; }
+    .c-miss { background-color: #ec4899; }
+    .c-blunder { background-color: #ef4444; }
+    
+    .slider-wrapper { display: flex; align-items: center; background: var(--panel2); border: 1px solid var(--line); border-radius: 8px; padding: 4px; gap: 4px; margin-bottom: 15px;}
+    .move-slider { flex: 1; display: flex; overflow-x: auto; scroll-behavior: smooth; gap: 10px; padding: 6px; scrollbar-width: none; }
+    .move-slider::-webkit-scrollbar { display: none; }
+    .move-pair { display: flex; align-items: center; gap: 6px; background: #0c0a11; padding: 6px 10px; border-radius: 6px; border: 1px solid var(--line); flex-shrink: 0; }
+    .move-num { color: var(--muted); font-size: 12px; font-weight: bold; width: 18px; }
+    .move-ply { display: flex; align-items: center; gap: 4px; color: #fff; font-size: 13px; font-weight: bold; cursor: pointer; padding: 4px; border-radius: 4px; transition: background 0.2s; }
+    .move-ply:active, .move-ply.active { background: #332d42; color: var(--purple); }
+    .mc-icon { width: 14px; height: 14px; display: flex; align-items: center; justify-content: center; }
+
+    .action-btn { background: var(--panel2); border: 1px solid var(--line); padding: 14px; border-radius: 8px; color: #fff; cursor: pointer; text-align: center; font-size: 15px; transition: background 0.2s; font-weight: bold; flex: 1;}
+    .action-btn:active { background: var(--purple); border-color: var(--purple); }
+
+    .modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); display: flex; align-items: center; justify-content: center; z-index: 1000; }
+    .modal-box { background: var(--panel); border: 1px solid var(--line); padding: 22px; border-radius: 12px; width: 90%; max-width: 340px; text-align: center; max-height:85vh; overflow-y:auto; }
+    .spinner { width: 40px; height: 40px; border: 4px solid var(--line); border-top: 4px solid var(--purple); border-radius: 50%; animation: spin 1s linear infinite; margin: 0 auto 15px auto; }
+    @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+    .hidden { display: none !important; }
+</style>
+</head>
+<body>
+
+<div style="max-width: 500px; margin: 0 auto;">
+    <header class="topbar">
+        <a class="icon-btn" href="../puzzle.html" id="btnBack">←</a>
+        <div class="topbar-center"><h1>Puzzle Sprint</h1></div>
+        <div style="width:20px;"></div>
+    </header>
+</div>
+
+<div id="ps-container">
+    <div style="text-align:center; padding:40px;">
+        <div class="spinner"></div>
+        <h3 style="color:var(--purple); margin:0;">Preparing Sprint Queue...</h3>
+    </div>
+</div>
+
+<!-- Ready Modal -->
+<div id="readyModal" class="modal-overlay hidden">
+    <div class="modal-box" style="text-align:left;">
+        <h2 style="color:var(--purple); margin:0 0 10px 0; text-align:center;">Are you ready?</h2>
+        <div style="background:var(--panel2); padding:12px; border-radius:8px; margin-bottom:15px;">
+            <p class="muted" style="margin:0 0 8px 0; font-size:14px; font-weight:800; color:#fff;" id="sprintModeText">Mode: 3 Minutes</p>
+            <p style="margin:0; font-size:12px; color:var(--muted); line-height:1.5;" id="sprintScoringText">
+                Correct: +200 pts<br>Wrong: -100 pts
+            </p>
+        </div>
+        <p style="font-size:12px; color:var(--muted); margin-bottom:20px; text-align:center;">
+            Incorrect moves instantly load the next puzzle. Speed is everything!
+        </p>
+        <button id="btnStartSprint" class="action-btn" style="width:100%; background:var(--purple); border-color:var(--purple);">Start Sprint</button>
+    </div>
+</div>
+
+<!-- Game Over Modal -->
+<div id="gameOverModal" class="modal-overlay hidden">
+    <div class="modal-box">
+        <h2 style="color:var(--purple); margin:0 0 10px 0;">Time's Up!</h2>
+        
+        <div style="font-size:12px; color:var(--muted); text-transform:uppercase; margin-bottom:4px; font-weight:800;">Total Score</div>
+        <div style="color:var(--purple); font-size:38px; font-weight:900; margin-bottom:15px; line-height:1;" id="finalScorePts">0</div>
+
+        <div style="display:flex; justify-content:space-between; font-size:18px; font-weight:900; background:var(--panel2); padding:15px; border-radius:8px; margin-bottom:15px;">
+            <div style="text-align:center; flex:1;">
+                <div style="color:var(--muted); font-size:11px; text-transform:uppercase;">Solved</div>
+                <div style="color:#84cc16; font-size:24px;" id="finalScore">0</div>
+            </div>
+            <div style="width:1px; background:var(--line);"></div>
+            <div style="text-align:center; flex:1;">
+                <div style="color:var(--muted); font-size:11px; text-transform:uppercase;">Failed</div>
+                <div style="color:#ef4444; font-size:24px;" id="finalWrong">0</div>
+            </div>
+        </div>
+
+        <p class="muted" id="highScoreNote" style="font-size:13px; margin-bottom:15px;"></p>
+        
+        <button class="action-btn" style="width:100%; margin-bottom:10px; background:var(--purple); border-color:var(--purple);" onclick="window.location.reload()">Play Again</button>
+        <button class="action-btn" style="width:100%; margin-bottom:10px;" onclick="window.location.href='sr.html'">Mistake Archive</button>
+        <button class="ghost-btn" style="width:100%;" onclick="window.location.href='../puzzle.html'">Back to Menu</button>
+    </div>
+</div>
+
+<script src="../debugger.js"></script>
+<script src="pstore.js"></script>
+<script src="pbin.js"></script>
+
+<script type="module">
+import { PuzzleBoard } from './pboard.js';
+
+let sState = {
+    points: 0,
+    correct: 0,
+    wrong: 0,
+    timeRemaining: 0,
+    ptGain: 200,
+    ptLoss: 100,
+    queue: [],
+    idx: 0,
+    globalInterval: null,
+    isGameOver: false
+};
+
+let currentPuzzle = null;
+
+// Memory cleanup on abort
+document.getElementById("btnBack").addEventListener("click", () => {
+    clearInterval(sState.globalInterval);
+    sState.queue = [];
+});
+
+document.addEventListener("DOMContentLoaded", async () => {
+    const rkey = await getDB("rkey");
+    if(!rkey || rkey.mode !== 5) return window.location.href = "../puzzle.html";
+
+    sState.timeRemaining = rkey.timeControl;
+    const mins = Math.floor(sState.timeRemaining / 60);
+    
+    // Balance point system across time modes
+    if (sState.timeRemaining === 300) { sState.ptGain = 120; sState.ptLoss = 60; }
+    else if (sState.timeRemaining === 600) { sState.ptGain = 60; sState.ptLoss = 30; }
+
+    document.getElementById("sprintModeText").innerText = `Mode: ${mins} Minute${mins>1?'s':''}`;
+    document.getElementById("sprintScoringText").innerHTML = `Correct: <span style="color:#84cc16">+${sState.ptGain}</span> pts<br>Wrong: <span style="color:#ef4444">-${sState.ptLoss}</span> pts`;
+    
+    await buildSprintQueue();
+    document.getElementById("readyModal").classList.remove("hidden");
+    
+    document.getElementById("btnStartSprint").onclick = () => {
+        document.getElementById("readyModal").classList.add("hidden");
+        startGlobalTimer();
+        loadNextSprintPuzzle();
+    };
+});
+
+async function buildSprintQueue() {
+    try {
+        const meta = await getMeta();
+        const playedSet = await getDB("playedPuzzlesSet") || {};
+        let added = 0;
+        let attempts = 0;
+
+        // Pre-map the 1300-2000 brackets for Mate in 1 and Mate in 2
+        const m1Brackets = [], m2Brackets = [];
+        for (let b = 1300; b <= 2000; b += 100) {
+            if (meta["mateIn1"]?.t1?.brackets[b.toString()]) m1Brackets.push(meta["mateIn1"].t1.brackets[b.toString()]);
+            if (meta["mateIn2"]?.t1?.brackets[b.toString()]) m2Brackets.push(meta["mateIn2"].t1.brackets[b.toString()]);
+        }
+        
+        let rInfo = { totalPuzzles: 0 };
+        try { rInfo = await fetchThemeOffsets("reserve", "1200"); } catch(e) {}
+
+        // Add 100 puzzles into RAM
+        while(added < 100 && attempts < 1000) {
+            attempts++;
+            let r = Math.random();
+            let pData = null;
+            let pKey = "";
+
+            if (r < 0.4 && rInfo.totalPuzzles > 0) {
+                // 40% Reserve 1200
+                const rIdx = Math.floor(Math.random() * Math.min(rInfo.totalPuzzles, 9000));
+                pKey = `res_${rIdx}`;
+                if (!playedSet[pKey] || attempts > 800) {
+                    pData = await extractPuzzleData("reserve", "1200", rIdx);
+                    // Discard if strictly > 2 moves (4 plies)
+                    if (pData.m.split(' ').length > 4) pData = null; 
+                }
+            } else if (r < 0.7 && m1Brackets.length > 0) {
+                // 30% Mate in 1
+                const br = m1Brackets[Math.floor(Math.random() * m1Brackets.length)];
+                const rIdx = Math.floor(Math.random() * (br[1] - br[0] + 1)) + br[0];
+                pKey = `mateIn1_t1_${rIdx}`;
+                if (!playedSet[pKey] || attempts > 800) pData = await extractPuzzleData("mateIn1", "1", rIdx);
+            } else if (m2Brackets.length > 0) {
+                // 30% Mate in 2
+                const br = m2Brackets[Math.floor(Math.random() * m2Brackets.length)];
+                const rIdx = Math.floor(Math.random() * (br[1] - br[0] + 1)) + br[0];
+                pKey = `mateIn2_t1_${rIdx}`;
+                if (!playedSet[pKey] || attempts > 800) pData = await extractPuzzleData("mateIn2", "1", rIdx);
+            }
+
+            if (pData) {
+                sState.queue.push(pData);
+                playedSet[pKey] = true;
+                added++;
+            }
+        }
+        await setDB("playedPuzzlesSet", playedSet);
+    } catch(e) {
+        console.error("Sprint Queue Build Failed", e);
+    }
+}
+
+function startGlobalTimer() {
+    sState.globalInterval = setInterval(() => {
+        if(sState.isGameOver) return clearInterval(sState.globalInterval);
+        
+        sState.timeRemaining--;
+        updateTimerDisplay();
+
+        if (sState.timeRemaining <= 0) triggerGameOver();
+    }, 1000);
+}
+
+function updateTimerDisplay() {
+    const els = document.querySelectorAll('.timer-tick');
+    const m = String(Math.floor(Math.max(0, sState.timeRemaining) / 60)).padStart(2, '0');
+    const s = String(Math.max(0, sState.timeRemaining) % 60).padStart(2, '0');
+    
+    els.forEach(el => {
+        el.innerText = `${m}:${s}`;
+        if (sState.timeRemaining <= 10) el.style.color = "#ef4444"; 
+    });
+}
+
+async function loadNextSprintPuzzle() {
+    if (sState.isGameOver) return;
+    
+    // Auto-refill logic: If only 10 puzzles remain, fetch 100 more asynchronously!
+    if (sState.queue.length - sState.idx < 10) {
+        buildSprintQueue(); 
+    }
+
+    if (sState.idx >= sState.queue.length) return triggerGameOver(); // Safety net
+
+    currentPuzzle = sState.queue[sState.idx];
+    sState.idx++;
+
+    const container = document.getElementById("ps-container");
+    const themeStr = THEMES[currentPuzzle.t] || "Tactics";
+
+    window.activeBoard = new PuzzleBoard("ps-container", {
+        isFirstPuzzle: false, 
+        themeHidden: true,
+        themeName: themeStr,
+        puzzleData: currentPuzzle,
+        blindLevel: 0,
+        // Raw values passed in. `hackLabels` overrides the text instantly.
+        topBar: { rating: sState.points, tier: sState.correct }, 
+        actions: [],
+        onComplete: async (timeMs) => {
+            if(sState.isGameOver) return;
+            sState.correct++;
+            sState.points += sState.ptGain;
+            
+            // timeMs natively tracks elapsed time precisely behind the scenes
+            await logPuzzleResult(5, 0, currentPuzzle.t, 1, currentPuzzle.i, timeMs);
+            loadNextSprintPuzzle(); // INSTANT NEXT
+        },
+        onFail: async (timeMs) => {
+            if(sState.isGameOver) return;
+            sState.wrong++;
+            sState.points -= sState.ptLoss;
+            
+            await logPuzzleResult(5, 1, currentPuzzle.t, 1, currentPuzzle.i, timeMs);
+            loadNextSprintPuzzle(); // INSTANT NEXT
+        }
+    });
+
+    // 1. Kill pboard's internal timer so it doesn't conflict with our countdown
+    clearInterval(window.activeBoard.timerInterval);
+    
+    // 2. Resync display to show only Total Remaining Time
+    updateTimerDisplay();
+
+    // 3. Rewrite "RATING/TIER" to "POINTS/CORRECT" seamlessly
+    hackLabels();
+}
+
+window.loadNextSprintPuzzle = loadNextSprintPuzzle;
+
+function hackLabels() {
+    setTimeout(() => {
+        const pCont = document.getElementById('ps-container');
+        if(!pCont) return;
+        
+        const mutedLabels = Array.from(pCont.querySelectorAll('div')).filter(d => 
+            d.style.fontSize === '10px' && d.style.color === 'var(--muted)'
+        );
+        
+        if (mutedLabels[0]) mutedLabels[0].innerText = "POINTS";
+        if (mutedLabels[1]) mutedLabels[1].innerText = "CORRECT";
+        if (mutedLabels[2]) mutedLabels[2].innerText = "TIME LEFT";
+
+        const valWrappers = pCont.querySelectorAll('div[style*="font-size:16px"]');
+        if (valWrappers[0]) valWrappers[0].innerText = sState.points;
+        if (valWrappers[1]) valWrappers[1].innerText = sState.correct;
+        if (valWrappers[3]) valWrappers[3].innerText = THEMES[currentPuzzle.t] ? formatThemeName(THEMES[currentPuzzle.t]) : "Tactics";
+    }, 10);
+}
+
+function formatThemeName(rawName) {
+    const spaced = rawName.replace(/([a-z])([A-Z0-9])/g, '$1 $2');
+    return spaced.replace(/^./, str => str.toUpperCase());
+}
+
+async function triggerGameOver() {
+    sState.isGameOver = true;
+    clearInterval(sState.globalInterval);
+    
+    if (window.activeBoard && window.activeBoard.boardClickArea) {
+        window.activeBoard.boardClickArea.style.pointerEvents = 'none';
+    }
+
+    document.getElementById("finalScorePts").innerText = sState.points;
+    document.getElementById("finalScore").innerText = sState.correct;
+    document.getElementById("finalWrong").innerText = sState.wrong;
+    
+    const m5State = await getDB("m5pda") || { highScore: 0 };
+    if (sState.points > m5State.highScore) {
+        m5State.highScore = sState.points;
+        await setDB("m5pda", m5State);
+        document.getElementById("highScoreNote").innerText = "🎉 New High Score!";
+        document.getElementById("highScoreNote").style.color = "#84cc16";
+    } else {
+        document.getElementById("highScoreNote").innerText = `High Score: ${m5State.highScore}`;
+    }
+
+    document.getElementById("gameOverModal").classList.remove("hidden");
+    sState.queue = []; // Dump memory cache
+}
+
+</script>
+</body>
+</html>

@@ -1,0 +1,458 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>History · Chess Review</title>
+<link rel="stylesheet" href="../styles.css">
+<style>
+    :root { --sq-light: #ebecd0; --sq-dark: #739552; }
+    body { padding: 10px; padding-bottom: 80px; }
+    
+    .topbar { display: flex; align-items: center; justify-content: space-between; padding: 10px 16px; background: var(--panel); border-bottom: 1px solid var(--line); margin-bottom: 15px; border-radius: 8px;}
+    .topbar-center h1 { margin: 0; font-size: 16px; }
+    .icon-btn { background: transparent; border: none; color: #fff; font-size: 20px; cursor: pointer; text-decoration: none; padding: 0; }
+
+    .history-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; }
+    
+    .hist-card { display: flex; gap: 12px; background: var(--panel2); border: 2px solid var(--line); border-radius: 12px; padding: 12px; transition: 0.2s; align-items: center; }
+    .hist-card.correct { border-color: #84cc16; background: rgba(132, 204, 22, 0.08); }
+    .hist-card.wrong { border-color: #ef4444; background: rgba(239, 68, 68, 0.08); }
+    .hist-card.skipped { border-color: #a855f7; background: rgba(168, 85, 247, 0.08); }
+
+    .hist-board { width: 90px; height: 90px; border-radius: 6px; box-shadow: 0 2px 6px rgba(0,0,0,0.5); flex-shrink: 0; background: var(--sq-dark); }
+    
+    .hist-info { display: flex; flex-direction: column; justify-content: center; flex: 1; min-width: 0; }
+    .h-mode { font-size: 14px; font-weight: 900; color: #fff; margin-bottom: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .h-theme { font-size: 11px; color: var(--muted); text-transform: uppercase; font-weight: 800; margin-bottom: 6px; }
+    .h-detail { font-size: 12px; color: #ccc; margin-bottom: 2px; display: flex; align-items: center; gap: 4px; }
+    
+    .h-stat { font-size: 13px; font-weight: 900; margin-top: 4px; display: inline-block; }
+    .correct .h-stat { color: #84cc16; }
+    .wrong .h-stat { color: #ef4444; }
+    .skipped .h-stat { color: #a855f7; }
+
+    .pagination-bar { position: fixed; bottom: 0; left: 0; width: 100%; background: var(--panel); border-top: 1px solid var(--line); padding: 12px 16px; display: flex; justify-content: space-between; align-items: center; z-index: 100; box-shadow: 0 -4px 12px rgba(0,0,0,0.5); box-sizing: border-box;}
+    .page-btn { background: var(--panel2); border: 1px solid var(--line); color: #fff; padding: 8px 16px; border-radius: 8px; font-weight: bold; cursor: pointer; transition: 0.2s; }
+    .page-btn:active { background: var(--purple); border-color: var(--purple); }
+    .page-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+    .page-indicator { font-size: 14px; font-weight: 900; color: var(--purple); cursor: pointer; padding: 8px; }
+
+    .modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); display: flex; align-items: center; justify-content: center; z-index: 1000; }
+    .modal-box { background: var(--panel); border: 1px solid var(--line); padding: 22px; border-radius: 12px; width: 90%; max-width: 360px; text-align: left; max-height:85vh; overflow-y:auto; }
+    .modal-box h2 { color: var(--purple); margin: 0 0 15px 0; font-size: 20px; }
+    .hidden { display: none !important; }
+
+    .action-btn { background: var(--panel2); border: 1px solid var(--line); padding: 12px; border-radius: 8px; color: #fff; cursor: pointer; text-align: center; font-size: 14px; transition: 0.2s; font-weight: bold; width: 100%; margin-bottom: 8px; display: block; }
+    .action-btn:active { background: var(--purple); border-color: var(--purple); }
+    
+    .danger-btn { background: rgba(239, 68, 68, 0.1); border: 1px solid #ef4444; color: #ef4444; }
+    .danger-btn:active { background: #ef4444; color: #fff; }
+
+    input[type="number"] { width: 100%; padding: 10px; background: var(--panel2); border: 1px solid var(--line); color: #fff; border-radius: 6px; font-weight: bold; margin-bottom: 12px; box-sizing: border-box; }
+</style>
+</head>
+<body>
+
+<div style="max-width: 800px; margin: 0 auto;">
+    <header class="topbar">
+        <a class="icon-btn" href="../puzzle.html" id="btnBack">←</a>
+        <div class="topbar-center"><h1>Session History</h1></div>
+        <button class="icon-btn" onclick="openTrashModal()" style="font-size: 18px;">🗑️</button>
+    </header>
+
+    <div id="loadingState" style="text-align:center; padding:50px;">
+        <h3 style="color:var(--purple);">Loading Archives...</h3>
+    </div>
+
+    <div id="emptyState" class="hidden" style="text-align:center; padding:50px;">
+        <h2 style="color:var(--muted); margin-bottom:10px;">No History Found</h2>
+        <p style="color:#777; font-size:14px;">Solve some puzzles to populate your archives.</p>
+    </div>
+
+    <div class="history-grid" id="historyContainer"></div>
+</div>
+
+<div class="pagination-bar" id="paginationBar" style="display:none;">
+    <button class="page-btn" id="btnPrev" onclick="changePage(-1)">◀ Prev</button>
+    <div class="page-indicator" id="lblPage" onclick="openPageModal()">Page 1 / 1</div>
+    <button class="page-btn" id="btnNext" onclick="changePage(1)">Next ▶</button>
+</div>
+
+<!-- Page Select Modal -->
+<div id="pageModal" class="modal-overlay hidden">
+    <div class="modal-box">
+        <h2>Jump to Page</h2>
+        <p class="muted" style="margin-bottom:15px; font-size:13px;">Enter a page number between 1 and <span id="maxPageLabel"></span>.</p>
+        <input type="number" id="jumpPageInput" min="1" value="1">
+        <button class="action-btn" style="background:var(--purple); border-color:var(--purple);" onclick="executePageJump()">Go to Page</button>
+        <button class="action-btn" onclick="closeModal('pageModal')">Cancel</button>
+    </div>
+</div>
+
+<!-- Trash & Export Modal -->
+<div id="trashModal" class="modal-overlay hidden">
+    <div class="modal-box">
+        <h2>Data Management</h2>
+        <p style="color:#fff; font-size:14px; font-weight:800; margin-bottom:15px;">Total Records: <span id="totalRecordsLabel" style="color:var(--purple);">0</span></p>
+        
+        <div style="background:var(--panel2); padding:12px; border-radius:8px; border:1px solid var(--line); margin-bottom:15px;">
+            <label style="font-size:12px; color:var(--muted); font-weight:bold; display:block; margin-bottom:6px;">Target Recent Puzzles (N):</label>
+            <input type="number" id="targetCountInput" min="1" value="10" style="margin-bottom:0;">
+        </div>
+
+        <button class="action-btn" onclick="exportData(false)">⬇️ Export & Clear Selected (N)</button>
+        <button class="action-btn" onclick="exportData(true)">⬇️ Export & Clear ALL</button>
+        <div style="height:1px; background:var(--line); margin:12px 0;"></div>
+        <button class="action-btn danger-btn" onclick="deleteData(false)">🗑️ Delete Selected (N)</button>
+        <button class="action-btn danger-btn" onclick="deleteData(true)">🗑️ Delete ALL</button>
+        <div style="height:1px; background:var(--line); margin:12px 0;"></div>
+        <input type="file" id="importFile" accept=".json" style="display:none;" onchange="importData(event)">
+        <button class="action-btn" style="border-color:#84cc16; color:#84cc16;" onclick="document.getElementById('importFile').click()">⬆️ Import Encrypted History</button>
+        
+        <button class="action-btn" style="margin-top:10px;" onclick="closeModal('trashModal')">Cancel</button>
+    </div>
+</div>
+
+<script src="../debugger.js"></script>
+<script src="pstore.js"></script>
+<script src="pbin.js"></script>
+
+<script type="module">
+const THEMES = [
+    "arabianMate", "pin", "zugzwang", "knightEndgame", "rookEndgame", "endgame", "exposedKing", 
+    "discoveredAttack", "bodenMate", "intermezzo", "opening", "interference", "xRayAttack", 
+    "hookMate", "smotheredMate", "sacrifice", "clearance", "castling", "quietMove", "mateIn2", 
+    "middlegame", "skewer", "queenEndgame", "deflection", "doubleCheck", "defensiveMove", 
+    "hangingPiece", "enPassant", "trappedPiece", "bishopEndgame", "mateIn1", "anastasiaMate", 
+    "mateIn4", "mateIn3", "underPromotion", "fork", "attraction", "pawnEndgame", "mateIn5"
+];
+
+const MODES = {
+    1: "Ranked Climb", 2: "3 Strike Run", 3: "Theme Mastery", 4: "Depth Escalator", 5: "Puzzle Sprint",
+    6: "Blindfold Tactics", 7: "Daily Gauntlet", 8: "Mistake Archive", 9: "Infinite Zen", 10: "Skipped Replay", 11: "3 Strike Run"
+};
+
+let fullHistory = [];
+let reversedHistory = [];
+let currentPage = 1;
+const ITEMS_PER_PAGE = 20;
+
+// High-speed Canvas Image Preloader
+const pieceMap = {};
+let imagesLoaded = false;
+const pieceChars = ['wp','wn','wb','wr','wq','wk','bp','bn','bb','br','bq','bk'];
+const appSettings = JSON.parse(localStorage.getItem("chessReviewSettings") || "{}");
+
+async function initImages() {
+    let customPieceDB = {};
+    try {
+        const res = await fetch('../pieces.json');
+        if (res.ok) customPieceDB = await res.json();
+    } catch(e) {}
+    
+    const activeSet = appSettings.activePieceSet || "Piece-set-1";
+    let folder = "../pieces/";
+    let pieceFilenames = { "wp":"wp.png", "wn":"wn.png", "wb":"wb.png", "wr":"wr.png", "wq":"wq.png", "wk":"wk.png", "bp":"bp.png", "bn":"bn.png", "bb":"bb.png", "br":"br.png", "bq":"bq.png", "bk":"bk.png" };
+    
+    if(customPieceDB[activeSet]) {
+        folder = "../" + customPieceDB[activeSet].src_path;
+        pieceFilenames = customPieceDB[activeSet].pieces;
+    }
+
+    let loadedCount = 0;
+    return new Promise(resolve => {
+        pieceChars.forEach(pc => {
+            let img = new Image();
+            img.src = folder + (pieceFilenames[pc] || `${pc}.png`);
+            img.onload = () => {
+                loadedCount++;
+                if (loadedCount === pieceChars.length) {
+                    imagesLoaded = true;
+                    resolve();
+                }
+            };
+            img.onerror = () => { loadedCount++; if (loadedCount === pieceChars.length) resolve(); }
+            pieceMap[pc] = img;
+        });
+    });
+}
+
+document.addEventListener("DOMContentLoaded", async () => {
+    document.documentElement.style.setProperty('--sq-light', appSettings.wHexCode || '#ebecd0');
+    document.documentElement.style.setProperty('--sq-dark', appSettings.bHexCode || '#739552');
+
+    await initImages();
+    await loadData();
+});
+
+async function loadData() {
+    fullHistory = await getDB("puzzleHistory") || [];
+    
+    if (fullHistory.length === 0) {
+        document.getElementById("loadingState").classList.add("hidden");
+        document.getElementById("emptyState").classList.remove("hidden");
+        document.getElementById("paginationBar").style.display = "none";
+        return;
+    }
+
+    // Clone and reverse so newest puzzles show up first
+    reversedHistory = [...fullHistory].reverse();
+    
+    document.getElementById("loadingState").classList.add("hidden");
+    document.getElementById("emptyState").classList.add("hidden");
+    document.getElementById("paginationBar").style.display = "flex";
+    
+    document.getElementById("totalRecordsLabel").innerText = fullHistory.length;
+    document.getElementById("targetCountInput").max = fullHistory.length;
+    document.getElementById("maxPageLabel").innerText = Math.ceil(reversedHistory.length / ITEMS_PER_PAGE);
+    
+    renderPage();
+}
+
+function parseRecord(rec) {
+    const rawNum = rec.p;
+    // Extract lower 2 bits for status (0=Solved, 1=Wrong, 3=Skipped)
+    const statBits = rawNum & 3; 
+    let statusClass = "correct";
+    let statusText = "Solved ✔️";
+    if (statBits === 1) { statusClass = "wrong"; statusText = "Failed ❌"; }
+    else if (statBits === 3 || statBits === 2) { statusClass = "skipped"; statusText = "Skipped ⏭️"; }
+
+    // Shift to get mode ID
+    const modeId = rawNum >> 2;
+    const modeName = MODES[modeId] || "Training Match";
+
+    const themeName = THEMES[rec.t] || "Tactics";
+    const dateObj = new Date((rec.ts || 0) * 1000);
+    const dateStr = dateObj.toLocaleDateString(undefined, {month:'short', day:'numeric'}) + ", " + dateObj.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
+    const timeSec = ((rec.d || 0) / 10).toFixed(1);
+
+    return { statusClass, statusText, modeName, themeName, dateStr, timeSec, tier: rec.tier || 1, idx: rec.i, tid: rec.t };
+}
+
+// Lightweight Canvas FEN Renderer
+function drawBoardToCanvas(canvasId, fenStr) {
+    const canvas = document.getElementById(canvasId);
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    const sqSize = canvas.width / 8;
+    const light = appSettings.wHexCode || '#ebecd0';
+    const dark = appSettings.bHexCode || '#739552';
+
+    const fenBoard = fenStr.split(' ')[0].split('/');
+    for (let r = 0; r < 8; r++) {
+        let f = 0;
+        for (let i = 0; i < fenBoard[r].length; i++) {
+            const char = fenBoard[r][i];
+            if (isNaN(char)) {
+                ctx.fillStyle = ((r+f)%2===0) ? light : dark;
+                ctx.fillRect(f*sqSize, r*sqSize, sqSize, sqSize);
+                
+                const pieceKey = (char === char.toLowerCase() ? 'b' : 'w') + char.toLowerCase();
+                if (pieceMap[pieceKey]) {
+                    ctx.drawImage(pieceMap[pieceKey], f*sqSize, r*sqSize, sqSize, sqSize);
+                }
+                f++;
+            } else {
+                const emptyCount = parseInt(char);
+                for(let e=0; e<emptyCount; e++) {
+                    ctx.fillStyle = ((r+f)%2===0) ? light : dark;
+                    ctx.fillRect(f*sqSize, r*sqSize, sqSize, sqSize);
+                    f++;
+                }
+            }
+        }
+    }
+}
+
+async function renderPage() {
+    const container = document.getElementById("historyContainer");
+    container.innerHTML = "";
+
+    const totalPages = Math.ceil(reversedHistory.length / ITEMS_PER_PAGE);
+    if (currentPage > totalPages) currentPage = totalPages;
+    if (currentPage < 1) currentPage = 1;
+
+    document.getElementById("lblPage").innerText = `Page ${currentPage} / ${totalPages}`;
+    document.getElementById("btnPrev").disabled = (currentPage === 1);
+    document.getElementById("btnNext").disabled = (currentPage === totalPages);
+
+    const startIndex = (currentPage - 1) * ITEMS_PER_PAGE;
+    const endIndex = Math.min(startIndex + ITEMS_PER_PAGE, reversedHistory.length);
+    const pageItems = reversedHistory.slice(startIndex, endIndex);
+
+    for (let i = 0; i < pageItems.length; i++) {
+        const rec = pageItems[i];
+        const parsed = parseRecord(rec);
+        const cid = `c_${startIndex + i}`;
+
+        // Create DOM skeleton immediately for fast rendering
+        const cardHTML = `
+            <div class="hist-card ${parsed.statusClass}">
+                <canvas id="canv_${cid}" class="hist-board" width="160" height="160"></canvas>
+                <div class="hist-info">
+                    <div class="h-mode">${parsed.modeName}</div>
+                    <div class="h-theme">${parsed.themeName.charAt(0).toUpperCase() + parsed.themeName.slice(1)} • Tier ${parsed.tier}</div>
+                    <div class="h-detail">📅 ${parsed.dateStr}</div>
+                    <div class="h-detail">⏱️ ${parsed.timeSec}s</div>
+                    <div class="h-stat">${parsed.statusText}</div>
+                </div>
+            </div>
+        `;
+        container.insertAdjacentHTML('beforeend', cardHTML);
+
+        // Fetch FEN asynchronously and draw it
+        extractPuzzleData(parsed.themeName, parsed.tier.toString(), parsed.idx).then(pData => {
+            if(pData && pData.f) {
+                drawBoardToCanvas(`canv_${cid}`, pData.f);
+            } else {
+                drawBoardToCanvas(`canv_${cid}`, "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1");
+            }
+        }).catch(() => {
+            drawBoardToCanvas(`canv_${cid}`, "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1");
+        });
+    }
+}
+
+window.changePage = (dir) => {
+    const totalPages = Math.ceil(reversedHistory.length / ITEMS_PER_PAGE);
+    let newPage = currentPage + dir;
+    if (newPage >= 1 && newPage <= totalPages) {
+        currentPage = newPage;
+        renderPage();
+        window.scrollTo(0,0);
+    }
+};
+
+window.openPageModal = () => {
+    document.getElementById('jumpPageInput').value = currentPage;
+    document.getElementById('pageModal').classList.remove('hidden');
+};
+
+window.executePageJump = () => {
+    const val = parseInt(document.getElementById('jumpPageInput').value);
+    const totalPages = Math.ceil(reversedHistory.length / ITEMS_PER_PAGE);
+    if (!isNaN(val) && val >= 1 && val <= totalPages) {
+        currentPage = val;
+        renderPage();
+        window.scrollTo(0,0);
+        closeModal('pageModal');
+    } else {
+        alert(`Please enter a valid page between 1 and ${totalPages}`);
+    }
+};
+
+window.openTrashModal = () => {
+    document.getElementById('trashModal').classList.remove('hidden');
+};
+
+window.closeModal = (id) => {
+    document.getElementById(id).classList.add('hidden');
+};
+
+// --- NATIVE ENCRYPTION LOGIC (XOR + Base64) ---
+const ENC_KEY = "123";
+
+function xorCipher(text) {
+    let output = '';
+    for (let i = 0; i < text.length; i++) {
+        output += String.fromCharCode(text.charCodeAt(i) ^ ENC_KEY.charCodeAt(i % ENC_KEY.length));
+    }
+    return output;
+}
+
+function encryptPayload(jsonObj) {
+    const jsonStr = JSON.stringify(jsonObj);
+    const utf8 = unescape(encodeURIComponent(jsonStr)); // Safe UTF-8 translation
+    const xored = xorCipher(utf8);
+    return btoa(xored);
+}
+
+function decryptPayload(b64Str) {
+    const xored = atob(b64Str);
+    const utf8 = xorCipher(xored);
+    const jsonStr = decodeURIComponent(escape(utf8));
+    return JSON.parse(jsonStr);
+}
+// ----------------------------------------------
+
+window.deleteData = async (all) => {
+    if(!confirm("Are you sure? This cannot be undone!")) return;
+    
+    if (all) {
+        await setDB("puzzleHistory", []);
+    } else {
+        const count = parseInt(document.getElementById('targetCountInput').value);
+        if(isNaN(count) || count <= 0) return alert("Enter a valid number.");
+        
+        // Remove the latest N items. Since fullHistory appends to the end, latest N are at the end.
+        fullHistory.splice(-count);
+        await setDB("puzzleHistory", fullHistory);
+    }
+    closeModal('trashModal');
+    currentPage = 1;
+    await loadData();
+};
+
+window.exportData = async (all) => {
+    let toExport = [];
+    if (all) {
+        toExport = [...fullHistory];
+    } else {
+        const count = parseInt(document.getElementById('targetCountInput').value);
+        if(isNaN(count) || count <= 0) return alert("Enter a valid number.");
+        toExport = fullHistory.slice(-count);
+    }
+
+    if(toExport.length === 0) return alert("Nothing to export!");
+
+    // Encrypt and Export
+    const encryptedData = encryptPayload(toExport);
+    const blob = new Blob([encryptedData], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `chess_history_backup_${new Date().getTime()}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+
+    // Auto Delete after successful export
+    await deleteData(all);
+};
+
+window.importData = (event) => {
+    const file = event.target.files[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = async (e) => {
+        try {
+            const encryptedText = e.target.result;
+            const parsedArray = decryptPayload(encryptedText);
+            
+            if (!Array.isArray(parsedArray)) throw new Error("Invalid file format.");
+            
+            fullHistory = fullHistory.concat(parsedArray);
+            await setDB("puzzleHistory", fullHistory);
+            
+            alert(`Successfully imported ${parsedArray.length} records!`);
+            closeModal('trashModal');
+            document.getElementById('importFile').value = ""; // Reset input
+            
+            currentPage = 1;
+            await loadData();
+        } catch(err) {
+            alert("Import failed. The file might be corrupted or encoded with a different key.");
+            console.error(err);
+            document.getElementById('importFile').value = "";
+        }
+    };
+    reader.readAsText(file);
+};
+</script>
+</body>
+</html>

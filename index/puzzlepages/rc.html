@@ -1,0 +1,232 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Ranked Climb · Chess Review</title>
+<link rel="stylesheet" href="../styles.css">
+<style>
+    :root { --sq-light: #ebecd0; --sq-dark: #739552; --move-duration: 0.3s; }
+    body { padding: 10px; }
+    
+    .topbar { display: flex; align-items: center; justify-content: space-between; padding: 10px 16px; background: var(--panel); border-bottom: 1px solid var(--line); margin-bottom: 15px; border-radius: 8px;}
+    .topbar-center h1 { margin: 0; font-size: 16px; }
+    .icon-btn { background: transparent; border: none; color: #fff; font-size: 20px; cursor: pointer; text-decoration: none; padding: 0; }
+
+    #rc-container { display: flex; flex-direction: column; width: 100%; max-width: 500px; margin: 0 auto; }
+    
+    /* BIG FIX: Limits the board size to 55% of your screen height so it never requires scrolling */
+    .board-layout-wrapper { display: flex; align-items: center; justify-content: center; width: 100%; max-width: 500px; height: auto; max-height: 55vh; margin: 0 auto 15px auto; }
+    .chessboard-wrapper { width: 100%; height: 100%; aspect-ratio: 1/1; max-height: 55vh; max-width: 55vh; position: relative; border: 2px solid var(--line); border-radius: 6px; overflow: hidden; box-shadow: 0 4px 14px rgba(0,0,0,0.4); cursor: pointer; }
+    
+    .chessboard { display: grid; grid-template-columns: repeat(8, 1fr); grid-template-rows: repeat(8, 1fr); width: 100%; height: 100%; z-index: 1; position: relative;}
+    .square { position: relative; display: flex; align-items: center; justify-content: center; }
+    .square.light { background-color: var(--sq-light); }
+    .square.dark { background-color: var(--sq-dark); }
+    
+    .coord-rank { position: absolute; top: 2px; left: 3px; font-size: 10px; font-weight: 800; z-index: 2; pointer-events: none; }
+    .coord-file { position: absolute; bottom: 1px; right: 3px; font-size: 10px; font-weight: 800; z-index: 2; pointer-events: none; }
+    .light .coord-text { color: var(--sq-dark); opacity: 0.8;}
+    .dark .coord-text { color: var(--sq-light); opacity: 0.8;}
+
+    .highlight-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; opacity: 0.6; z-index: 1; display: none; }
+    .legal-dot { position: absolute; width: 32%; height: 32%; background: rgba(0,0,0,0.25); border-radius: 50%; z-index: 6; pointer-events: none; }
+    .piece-layer { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 5; }
+    .piece { position: absolute; width: 12.5%; height: 12.5%; background-size: 95%; background-repeat: no-repeat; background-position: center; transition: transform var(--move-duration) ease-in-out, opacity 0.2s ease; pointer-events: none; }
+    .badge-layer { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 10; }
+    .floating-badge { position: absolute; width: 22px; height: 22px; margin-top: -6px; margin-left: -6px; z-index: 10; background: transparent; filter: drop-shadow(0 2px 4px rgba(0,0,0,0.5)); transition: transform var(--move-duration) ease-in-out;}
+    
+    .c-best, .c-excellent { background-color: #84cc16; }
+    .c-brilliant { background-color: #1cb0a6; }
+    .c-miss { background-color: #ec4899; }
+    .c-blunder { background-color: #ef4444; }
+    
+    .slider-wrapper { display: flex; align-items: center; background: var(--panel2); border: 1px solid var(--line); border-radius: 8px; padding: 4px; gap: 4px; margin-bottom: 15px;}
+    .move-slider { flex: 1; display: flex; overflow-x: auto; scroll-behavior: smooth; gap: 10px; padding: 6px; scrollbar-width: none; }
+    .move-slider::-webkit-scrollbar { display: none; }
+    .move-pair { display: flex; align-items: center; gap: 6px; background: #0c0a11; padding: 6px 10px; border-radius: 6px; border: 1px solid var(--line); flex-shrink: 0; }
+    .move-num { color: var(--muted); font-size: 12px; font-weight: bold; width: 18px; }
+    .move-ply { display: flex; align-items: center; gap: 4px; color: #fff; font-size: 13px; font-weight: bold; cursor: pointer; padding: 4px; border-radius: 4px; transition: background 0.2s; }
+    .move-ply:active, .move-ply.active { background: #332d42; color: var(--purple); }
+    .mc-icon { width: 14px; height: 14px; display: flex; align-items: center; justify-content: center; }
+
+    .action-btn { background: var(--panel2); border: 1px solid var(--line); padding: 14px; border-radius: 8px; color: #fff; cursor: pointer; text-align: center; font-size: 15px; transition: background 0.2s; font-weight: bold; flex: 1;}
+    .action-btn:active { background: var(--purple); border-color: var(--purple); }
+
+    .modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); display: flex; align-items: center; justify-content: center; z-index: 1000; }
+    .modal-box { background: var(--panel); border: 1px solid var(--line); padding: 22px; border-radius: 12px; width: 90%; max-width: 340px; text-align: center; max-height:85vh; overflow-y:auto; }
+    .spinner { width: 40px; height: 40px; border: 4px solid var(--line); border-top: 4px solid var(--purple); border-radius: 50%; animation: spin 1s linear infinite; margin: 0 auto 15px auto; }
+    @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+    .hidden { display: none !important; }
+</style>
+</head>
+<body>
+
+<div style="max-width: 500px; margin: 0 auto;">
+    <header class="topbar">
+        <a class="icon-btn" href="../puzzle.html" id="btnBack">←</a>
+        <div class="topbar-center"><h1>Ranked Climb</h1></div>
+        <div style="display:flex; gap:12px;">
+            <button class="icon-btn" id="btnRestart" style="font-size:16px;">🔄</button>
+            <button class="icon-btn" onclick="document.getElementById('infoModal').classList.remove('hidden')">ℹ️</button>
+        </div>
+    </header>
+</div>
+
+<div id="rc-container">
+    <div style="text-align:center; padding:40px;">
+        <div class="spinner"></div>
+        <h3 style="color:var(--purple); margin:0;">Loading Engine...</h3>
+    </div>
+</div>
+
+<div id="infoModal" class="modal-overlay hidden">
+    <div class="modal-box" style="text-align:left;">
+        <h3 style="color:var(--purple); margin-top:0; text-align:center;">Match Info</h3>
+        <p class="muted" style="margin-bottom:6px;">Path: <strong id="infoBinName" style="color:#fff;">...</strong></p>
+        <p class="muted" style="margin-bottom:6px;">Index: <strong id="infoPuzzleIdx" style="color:#fff;">...</strong></p>
+        <p class="muted" style="margin-bottom:16px;">Rating: <strong id="infoPuzzleRating" style="color:var(--purple);">...</strong></p>
+        
+        <div style="background:var(--panel2); padding:10px; border-radius:8px; margin-bottom:15px;">
+            <div style="font-size:12px; font-weight:800; color:var(--purple); margin-bottom:6px; text-transform:uppercase;">The Tier Cycle Dilemma</div>
+            <div style="font-size:12px; color:var(--muted); line-height:1.5;">
+                <p style="margin-top:0;">Your puzzles follow a strict 7-match escalation cycle to test your calculation depth:</p>
+                <ul style="padding-left:15px; margin-bottom:0;">
+                    <li><strong>3x Easy</strong> (Tier 1: ≤ 5 plies)</li>
+                    <li><strong>3x Medium</strong> (Tier 2: 6-9 plies)</li>
+                    <li><strong>1x Hard</strong> (Tier 3: ≥ 10 plies)</li>
+                </ul>
+            </div>
+        </div>
+
+        <button class="ghost-btn" style="width:100%;" onclick="document.getElementById('infoModal').classList.add('hidden')">Close</button>
+    </div>
+</div>
+
+<script src="../debugger.js"></script>
+<script src="pstore.js"></script>
+<script src="pbin.js"></script>
+
+<script type="module">
+import { PuzzleBoard } from './pboard.js';
+
+let rcState = { rating: 1300.0, playedCount: 0, activePuzzle: null };
+let currentPuzzle = null;
+let sessionFirstPuzzle = true; 
+
+document.getElementById("btnRestart").onclick = () => {
+    if(confirm("Do you want to reset your Ranked Climb progress and rating back to 1300?")) {
+        rcState = { rating: 1300.0, playedCount: 0, activePuzzle: null };
+        setDB("m1pda", rcState).then(() => window.location.reload());
+    }
+};
+
+function calcElo(userR, puzR, isWin, targetTier) {
+    const D = 10 + Math.floor(Math.max(0, userR - 1300) / 100) * 2;
+    const diff = puzR - Math.floor(userR);
+    if (isWin) {
+        const tierMult = targetTier === 1 ? 1.0 : (targetTier === 2 ? 1.2 : 1.5);
+        return Math.max(1, diff / D) * tierMult;
+    } else {
+        const tierMult = targetTier === 1 ? 1.0 : (targetTier === 2 ? 0.8 : 0.5);
+        return Math.max(1, (50 - diff) / D) * tierMult;
+    }
+}
+
+document.addEventListener("DOMContentLoaded", async () => {
+    const loadedState = await getDB("m1pda");
+    if (loadedState) rcState = loadedState;
+    startNextPuzzle();
+});
+
+async function startNextPuzzle() {
+    const container = document.getElementById("rc-container");
+    container.innerHTML = '<div style="text-align:center; padding:40px;"><div class="spinner"></div><h3 style="color:var(--purple); margin:0;">Fetching Match...</h3></div>';
+    
+    let cyclePos = rcState.playedCount % 7;
+    let targetTier = 1;
+    let tierText = "Easy";
+    if (cyclePos >= 3 && cyclePos <= 5) { targetTier = 2; tierText = "Medium"; }
+    if (cyclePos === 6) { targetTier = 3; tierText = "Hard"; }
+
+    let baseR = Math.max(1200, Math.floor(rcState.rating));
+
+    try {
+        // BUG FIX: Only fetch if we don't already have an active puzzle saved!
+        if (rcState.activePuzzle) {
+            currentPuzzle = rcState.activePuzzle;
+        } else {
+            currentPuzzle = await getNextPuzzle(1, [], baseR, baseR + 50, targetTier);
+            if (!currentPuzzle) return container.innerHTML = '<div style="text-align:center; color:var(--red);">No puzzles found in range!</div>';
+            rcState.activePuzzle = currentPuzzle;
+            await setDB("m1pda", rcState);
+        }
+
+        document.getElementById("infoBinName").textContent = `${THEMES[currentPuzzle.t] || 'reserve'}/${currentPuzzle.tier}.bin`;
+        document.getElementById("infoPuzzleIdx").textContent = currentPuzzle.i;
+        document.getElementById("infoPuzzleRating").textContent = currentPuzzle.r;
+
+        window.activeBoard = new PuzzleBoard("rc-container", {
+            isFirstPuzzle: sessionFirstPuzzle,
+            themeHidden: true,
+            themeName: THEMES[currentPuzzle.t] || "Tactics",
+            puzzleData: currentPuzzle,
+            blindLevel: 0,
+            topBar: { rating: Math.floor(rcState.rating), tier: tierText },
+            actions: [
+                { 
+                    label: "I give up 💔", 
+                    class: "action-btn", 
+                    onClick: async (timeMs) => {
+                        window.activeBoard.playSolution();
+                        const loss = calcElo(rcState.rating, currentPuzzle.r, false, targetTier);
+                        rcState.rating = Math.max(1200, rcState.rating - loss);
+                        rcState.playedCount++;
+                        rcState.activePuzzle = null; // Clear it to allow next fetch!
+                        await setDB("m1pda", rcState);
+                        
+                        await logPuzzleResult(1, 2, currentPuzzle.t, currentPuzzle.tier, currentPuzzle.i, timeMs);
+                        
+                        document.getElementById("ui-rating-val").innerText = Math.floor(rcState.rating);
+                        document.getElementById("action-container").innerHTML = `
+                            <button class="action-btn" onclick="window.startNextPuzzle()">Next Puzzle</button>
+                        `;
+                    } 
+                }
+            ],
+            onComplete: async (timeMs) => {
+                const gain = calcElo(rcState.rating, currentPuzzle.r, true, targetTier);
+                rcState.rating += gain;
+                rcState.playedCount++;
+                rcState.activePuzzle = null; // Clear it to allow next fetch!
+                await setDB("m1pda", rcState);
+                await logPuzzleResult(1, 0, currentPuzzle.t, currentPuzzle.tier, currentPuzzle.i, timeMs);
+                
+                document.getElementById("ui-rating-val").innerText = Math.floor(rcState.rating);
+                document.getElementById("action-container").innerHTML = `<button class="action-btn" onclick="window.startNextPuzzle()">Next Puzzle</button>`;
+            },
+            onFail: async (timeMs) => {
+                const loss = calcElo(rcState.rating, currentPuzzle.r, false, targetTier);
+                rcState.rating = Math.max(1200, rcState.rating - loss); 
+                rcState.playedCount++;
+                rcState.activePuzzle = null; // Clear it to allow next fetch!
+                await setDB("m1pda", rcState);
+                await logPuzzleResult(1, 1, currentPuzzle.t, currentPuzzle.tier, currentPuzzle.i, timeMs);
+                
+                document.getElementById("ui-rating-val").innerText = Math.floor(rcState.rating);
+                document.getElementById("action-container").innerHTML = `
+                    <button class="action-btn" onclick="window.activeBoard.playSolution()">Show Solution</button>
+                    <button class="action-btn" onclick="window.startNextPuzzle()">Next</button>
+                `;
+            }
+        });
+        
+        sessionFirstPuzzle = false; 
+    } catch (e) {
+        container.innerHTML = '<div style="text-align:center; color:var(--red);">Error loading puzzle engine.</div>';
+    }
+}
+window.startNextPuzzle = startNextPuzzle;
+</script>
+</body>
+</html>

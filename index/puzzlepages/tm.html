@@ -1,0 +1,396 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Theme Mastery · Chess Review</title>
+<link rel="stylesheet" href="../styles.css">
+<style>
+    :root { --sq-light: #ebecd0; --sq-dark: #739552; --move-duration: 0.3s; }
+    body { padding: 10px; }
+    
+    .topbar { display: flex; align-items: center; justify-content: space-between; padding: 10px 16px; background: var(--panel); border-bottom: 1px solid var(--line); margin-bottom: 15px; border-radius: 8px;}
+    .topbar-center h1 { margin: 0; font-size: 16px; }
+    .icon-btn { background: transparent; border: none; color: #fff; font-size: 20px; cursor: pointer; text-decoration: none; padding: 0; }
+    
+    .board-layout-wrapper { display: flex; align-items: center; justify-content: center; width: 100%; max-width: 500px; height: auto; max-height: 55vh; margin: 0 auto 15px auto; }
+    .chessboard-wrapper { width: 100%; height: 100%; aspect-ratio: 1/1; max-height: 55vh; max-width: 55vh; position: relative; border: 2px solid var(--line); border-radius: 6px; overflow: hidden; box-shadow: 0 4px 14px rgba(0,0,0,0.4); cursor: pointer; }
+    
+    .chessboard { display: grid; grid-template-columns: repeat(8, 1fr); grid-template-rows: repeat(8, 1fr); width: 100%; height: 100%; z-index: 1; position: relative;}
+    .square { position: relative; display: flex; align-items: center; justify-content: center; }
+    .square.light { background-color: var(--sq-light); }
+    .square.dark { background-color: var(--sq-dark); }
+    
+    .coord-rank { position: absolute; top: 2px; left: 3px; font-size: 10px; font-weight: 800; z-index: 2; pointer-events: none; }
+    .coord-file { position: absolute; bottom: 1px; right: 3px; font-size: 10px; font-weight: 800; z-index: 2; pointer-events: none; }
+    .light .coord-text { color: var(--sq-dark); opacity: 0.8;}
+    .dark .coord-text { color: var(--sq-light); opacity: 0.8;}
+
+    .highlight-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; opacity: 0.6; z-index: 1; display: none; }
+    .legal-dot { position: absolute; width: 32%; height: 32%; background: rgba(0,0,0,0.25); border-radius: 50%; z-index: 6; pointer-events: none; }
+    .piece-layer { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 5; }
+    .piece { position: absolute; width: 12.5%; height: 12.5%; background-size: 95%; background-repeat: no-repeat; background-position: center; transition: transform var(--move-duration) ease-in-out, opacity 0.2s ease; pointer-events: none; }
+    .badge-layer { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 10; }
+    .floating-badge { position: absolute; width: 22px; height: 22px; margin-top: -6px; margin-left: -6px; z-index: 10; background: transparent; filter: drop-shadow(0 2px 4px rgba(0,0,0,0.5)); transition: transform var(--move-duration) ease-in-out;}
+    
+    .c-best, .c-excellent { background-color: #84cc16; }
+    .c-brilliant { background-color: #1cb0a6; }
+    .c-miss { background-color: #ec4899; }
+    
+    .slider-wrapper { display: flex; align-items: center; background: var(--panel2); border: 1px solid var(--line); border-radius: 8px; padding: 4px; gap: 4px; margin-bottom: 15px;}
+    .move-slider { flex: 1; display: flex; overflow-x: auto; scroll-behavior: smooth; gap: 10px; padding: 6px; scrollbar-width: none; }
+    .move-slider::-webkit-scrollbar { display: none; }
+    .move-pair { display: flex; align-items: center; gap: 6px; background: #0c0a11; padding: 6px 10px; border-radius: 6px; border: 1px solid var(--line); flex-shrink: 0; }
+    .move-num { color: var(--muted); font-size: 12px; font-weight: bold; width: 18px; }
+    .move-ply { display: flex; align-items: center; gap: 4px; color: #fff; font-size: 13px; font-weight: bold; cursor: pointer; padding: 4px; border-radius: 4px; transition: background 0.2s; }
+    .move-ply:active, .move-ply.active { background: #332d42; color: var(--purple); }
+    .mc-icon { width: 14px; height: 14px; display: flex; align-items: center; justify-content: center; }
+
+    .action-btn { background: var(--panel2); border: 1px solid var(--line); padding: 14px; border-radius: 8px; color: #fff; cursor: pointer; text-align: center; font-size: 15px; transition: background 0.2s; font-weight: bold; flex: 1;}
+    .action-btn:active { background: var(--purple); border-color: var(--purple); }
+
+    .modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); display: flex; align-items: center; justify-content: center; z-index: 1000; }
+    .modal-box { background: var(--panel); border: 1px solid var(--line); padding: 22px; border-radius: 12px; width: 90%; max-width: 320px; text-align: center; }
+    .spinner { width: 40px; height: 40px; border: 4px solid var(--line); border-top: 4px solid var(--purple); border-radius: 50%; animation: spin 1s linear infinite; margin: 0 auto 15px auto; }
+    @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+    .hidden { display: none !important; }
+    #tm-container { display: flex; flex-direction: column; width: 100%; max-width: 500px; margin: 0 auto; }
+</style>
+</head>
+<body>
+
+<div style="max-width: 500px; margin: 0 auto;">
+    <header class="topbar">
+        <a class="icon-btn" href="../puzzle.html" id="btnBack">←</a>
+        <div class="topbar-center"><h1>Theme Mastery</h1></div>
+        <div style="display:flex; gap:12px;">
+            <button class="icon-btn" id="btnRestart" style="font-size:16px;">🔄</button>
+            <button class="icon-btn" onclick="document.getElementById('infoModal').classList.remove('hidden')">ℹ️</button>
+        </div>
+    </header>
+</div>
+
+<div id="tm-container">
+    <div style="text-align:center; padding:40px;">
+        <div class="spinner"></div>
+        <h3 style="color:var(--purple); margin:0;">Loading Mastery...</h3>
+    </div>
+</div>
+
+<!-- Info Modal -->
+<div id="infoModal" class="modal-overlay hidden">
+    <div class="modal-box" style="text-align:left;">
+        <h3 style="color:var(--purple); margin-top:0; text-align:center;">Match Info</h3>
+        <p class="muted" style="margin-bottom:6px;">Path: <strong id="infoBinName" style="color:#fff;">...</strong></p>
+        <p class="muted" style="margin-bottom:6px;">Index: <strong id="infoPuzzleIdx" style="color:#fff;">...</strong></p>
+        <p class="muted" style="margin-bottom:16px;">Rating: <strong id="infoPuzzleRating" style="color:var(--purple);">...</strong></p>
+        <button class="ghost-btn" style="width:100%;" onclick="document.getElementById('infoModal').classList.add('hidden')">Close</button>
+    </div>
+</div>
+
+<!-- Session Management Modal -->
+<div id="sessionModal" class="modal-overlay hidden">
+    <div class="modal-box">
+        <h3 style="color:var(--purple); margin-top:0;">Session Found</h3>
+        <p class="muted" style="margin-bottom:16px; font-size:14px;">You have an active Theme Mastery sequence. Do you want to resume it or start fresh?</p>
+        
+        <div style="display:flex; flex-direction:column; gap:10px;">
+            <button class="action-btn" style="background:var(--purple); border-color:var(--purple);" onclick="resumeSession()">Resume Session</button>
+            <button class="action-btn" onclick="exportSession()">Export & Save Session</button>
+            
+            <label class="action-btn" style="cursor:pointer;">
+                Import Session
+                <input type="file" id="fileImport" accept=".crv" style="display:none;" onchange="importSession(event)">
+            </label>
+            
+            <button class="action-btn" style="color:#fa5252; border-color:#fa5252;" onclick="startNewSession()">Wipe & Start New</button>
+        </div>
+    </div>
+</div>
+
+<script src="../debugger.js"></script>
+<script src="pstore.js"></script>
+<script src="pbin.js"></script>
+
+<script type="module">
+import { PuzzleBoard } from './pboard.js';
+
+let m3state = null;
+let currentPuzzle = null;
+let sessionFirstPuzzle = true; 
+
+function cipherData(str) {
+    const key = "123";
+    let out = "";
+    for(let i=0; i<str.length; i++) {
+        out += String.fromCharCode(str.charCodeAt(i) ^ key.charCodeAt(i % key.length));
+    }
+    return btoa(out); 
+}
+function decipherData(b64) {
+    const str = atob(b64);
+    const key = "123";
+    let out = "";
+    for(let i=0; i<str.length; i++) {
+        out += String.fromCharCode(str.charCodeAt(i) ^ key.charCodeAt(i % key.length));
+    }
+    return out;
+}
+
+window.resumeSession = async () => {
+    document.getElementById("sessionModal").classList.add("hidden");
+    await loadNextPuzzle();
+};
+
+window.startNewSession = async () => {
+    document.getElementById("sessionModal").classList.add("hidden");
+    await wipeSessionKeys();
+    await initNewState();
+};
+
+window.exportSession = async () => {
+    if(!m3state) return;
+    let payload = { state: m3state, queue: [] };
+    for(let i=m3state.queueIdx; i<m3state.queueLength; i++){
+        let p = await getDB(`m3p${i}`);
+        if(p) payload.queue.push(p);
+    }
+    const blob = new Blob([cipherData(JSON.stringify(payload))], {type: "text/plain"});
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = "mastery_session.crv";
+    a.click();
+};
+
+window.importSession = async (e) => {
+    const file = e.target.files[0];
+    if(!file) return;
+    const reader = new FileReader();
+    reader.onload = async (evt) => {
+        try {
+            const dec = JSON.parse(decipherData(evt.target.result));
+            await wipeSessionKeys();
+            m3state = dec.state;
+            m3state.queueIdx = 0;
+            m3state.queueLength = dec.queue.length;
+            for(let i=0; i<dec.queue.length; i++) {
+                await setDB(`m3p${i}`, dec.queue[i]);
+            }
+            await setDB("m3state", m3state);
+            document.getElementById("sessionModal").classList.add("hidden");
+            await loadNextPuzzle();
+        } catch(err) {
+            alert("Invalid or corrupted session file.");
+        }
+    };
+    reader.readAsText(file);
+};
+
+document.getElementById("btnRestart").onclick = () => {
+    if(confirm("Are you sure you want to restart Theme Mastery? This will wipe your current sequential progress.")) {
+        window.startNewSession();
+    }
+};
+
+async function wipeSessionKeys() {
+    if(m3state) {
+        for(let i=0; i<m3state.queueLength; i++) await setDB(`m3p${i}`, null);
+    }
+    await setDB("m3state", null);
+}
+
+document.addEventListener("DOMContentLoaded", async () => {
+    m3state = await getDB("m3state");
+    if(m3state) {
+        document.getElementById("sessionModal").classList.remove("hidden");
+    } else {
+        await initNewState();
+    }
+});
+
+async function initNewState() {
+    const rkey = await getDB("rkey");
+    if(!rkey || rkey.mode !== 3) return window.location.href = "../puzzle.html";
+    const meta = await getMeta(); 
+    let prog = {};
+    for (let tId of rkey.themes) {
+        let tName = THEMES[tId];
+        prog[tId] = {};
+        for (let tier of [1, 2, 3]) {
+            let tMeta = meta[tName][`t${tier}`];
+            let c = -1, m = -1;
+            if (tMeta && tMeta.total > 0) {
+                let minFound = Infinity, maxFound = -1;
+                for (let b = rkey.minElo; b <= rkey.maxElo; b += 100) {
+                    let br = tMeta.brackets[b.toString()];
+                    if (br) {
+                        if (br[0] < minFound) minFound = br[0];
+                        if (br[1] > maxFound) maxFound = br[1];
+                    }
+                }
+                if (minFound !== Infinity) { c = minFound; m = maxFound; }
+            }
+            prog[tId][tier] = { c: c, m: m, exhausted: (c === -1) };
+        }
+    }
+    
+    m3state = {
+        activeThemes: rkey.themes,
+        prog: prog,
+        pointer: 0,
+        t1Count: 0,
+        t2Count: 0,
+        queueIdx: 0,
+        queueLength: 0,
+        loopStep: 0,
+        loopT2Pos: Math.floor(Math.random() * rkey.themes.length),
+        t2ServedInLoop: false,
+        lastServedTheme: null,
+        activePuzzle: null // Added for persistence
+    };
+    await generateSequenceBatch();
+    await loadNextPuzzle();
+}
+
+async function fetchValidPuzzle(tId, tier) {
+    let pt = m3state.prog[tId][tier];
+    if (pt.exhausted || pt.c > pt.m) {
+        if (tier === 1) {
+            m3state.activeThemes = m3state.activeThemes.filter(x => x !== tId);
+        } else {
+            pt.exhausted = true;
+        }
+        return null;
+    }
+    let pData = await extractPuzzleData(THEMES[tId], tier.toString(), pt.c);
+    pt.c++; 
+    return pData;
+}
+
+async function generateSequenceBatch() {
+    let batch = [];
+    let n = m3state.activeThemes.length;
+    if (n === 0) return false;
+
+    for (let i = 0; i < 6; i++) {
+        if (m3state.activeThemes.length === 0) break;
+        n = m3state.activeThemes.length;
+        let tId = m3state.activeThemes[m3state.pointer % n];
+        
+        if (n > 5) {
+            if (m3state.loopStep === m3state.loopT2Pos + 1 && !m3state.t2ServedInLoop) {
+                m3state.t2Count++;
+                let reqTier = (m3state.t2Count % 10 === 0) ? 3 : 2;
+                batch.push({ tId: m3state.lastServedTheme, tier: reqTier });
+                m3state.t2ServedInLoop = true;
+                i--; 
+                continue;
+            }
+            batch.push({ tId: tId, tier: 1 });
+            m3state.lastServedTheme = tId;
+            m3state.pointer++;
+            m3state.loopStep++;
+            if (m3state.loopStep >= n) {
+                m3state.loopStep = 0;
+                m3state.t2ServedInLoop = false;
+                m3state.loopT2Pos = Math.floor(Math.random() * n);
+            }
+        } else {
+            batch.push({ tId: tId, tier: 1 });
+            m3state.t1Count++;
+            m3state.pointer++;
+            if (m3state.t1Count % 5 === 0) {
+                m3state.t2Count++;
+                let reqTier = (m3state.t2Count % 10 === 0) ? 3 : 2;
+                let t2Theme = m3state.activeThemes[m3state.pointer % m3state.activeThemes.length];
+                batch.push({ tId: t2Theme, tier: reqTier });
+            }
+        }
+    }
+
+    let added = 0;
+    for (let req of batch) {
+        let pData = await fetchValidPuzzle(req.tId, req.tier);
+        if (!pData && req.tier > 1) pData = await fetchValidPuzzle(req.tId, 1);
+        if (pData) {
+            await setDB(`m3p${m3state.queueLength}`, pData);
+            m3state.queueLength++;
+            added++;
+        }
+    }
+    await setDB("m3state", m3state);
+    return added > 0;
+}
+
+// BUG FIX: Advance puzzle logic correctly respects activePuzzle caching
+async function advanceToNextSequence() {
+    m3state.activePuzzle = null;
+    await setDB("m3state", m3state);
+    window.resumeSession();
+}
+window.advanceToNextSequence = advanceToNextSequence;
+
+async function loadNextPuzzle() {
+    const container = document.getElementById("tm-container");
+    container.innerHTML = '<div style="text-align:center; padding:40px;"><div class="spinner"></div><h3 style="color:var(--purple); margin:0;">Loading Logic...</h3></div>';
+
+    // Check cache first
+    if (m3state.activePuzzle) {
+        currentPuzzle = m3state.activePuzzle;
+    } else {
+        if (m3state.queueIdx >= m3state.queueLength) {
+            const generated = await generateSequenceBatch();
+            if (!generated) {
+                return container.innerHTML = '<div style="text-align:center; color:var(--purple); padding:20px;"><h3>Mastery Complete!</h3><p>You have exhausted all selected themes in this bracket.</p><button class="action-btn" onclick="window.location.href=\'../puzzle.html\'">Return</button></div>';
+            }
+        }
+
+        currentPuzzle = await getDB(`m3p${m3state.queueIdx}`);
+        m3state.activePuzzle = currentPuzzle; // Cache it!
+        m3state.queueIdx++;
+        await setDB("m3state", m3state); 
+    }
+    
+    if (m3state.queueLength - m3state.queueIdx < 3) generateSequenceBatch();
+
+    document.getElementById("infoBinName").textContent = `${THEMES[currentPuzzle.t]}/${currentPuzzle.tier}.bin`;
+    document.getElementById("infoPuzzleIdx").textContent = currentPuzzle.i;
+    document.getElementById("infoPuzzleRating").textContent = currentPuzzle.r;
+
+    const tString = currentPuzzle.tier === 1 ? "Phase 1" : (currentPuzzle.tier === 2 ? "Phase 2" : "Phase 3");
+    
+    window.activeBoard = new PuzzleBoard("tm-container", {
+        isFirstPuzzle: sessionFirstPuzzle, 
+        themeHidden: false,
+        themeName: THEMES[currentPuzzle.t],
+        puzzleData: currentPuzzle,
+        blindLevel: 0,
+        topBar: { rating: currentPuzzle.r, tier: tString },
+        actions: [
+            { 
+                label: "I give up 💔", class: "action-btn", 
+                onClick: async (timeMs) => {
+                    window.activeBoard.playSolution();
+                    await logPuzzleResult(3, 2, currentPuzzle.t, currentPuzzle.tier, currentPuzzle.i, timeMs);
+                    document.getElementById("action-container").innerHTML = `<button class="action-btn" onclick="window.advanceToNextSequence()">Next Sequence</button>`;
+                } 
+            }
+        ],
+        onComplete: async (timeMs) => {
+            await logPuzzleResult(3, 0, currentPuzzle.t, currentPuzzle.tier, currentPuzzle.i, timeMs);
+            document.getElementById("action-container").innerHTML = `<button class="action-btn" onclick="window.advanceToNextSequence()">Next Sequence</button>`;
+        },
+        onFail: async (timeMs) => {
+            await logPuzzleResult(3, 1, currentPuzzle.t, currentPuzzle.tier, currentPuzzle.i, timeMs);
+            document.getElementById("action-container").innerHTML = `
+                <button class="action-btn" onclick="window.activeBoard.playSolution()">Show Solution</button>
+                <button class="action-btn" onclick="window.advanceToNextSequence()">Next</button>
+            `;
+        }
+    });
+    
+    sessionFirstPuzzle = false;
+}
+</script>
+</body>
+</html>

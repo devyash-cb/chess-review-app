@@ -1,0 +1,366 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Daily Gauntlet · Chess Review</title>
+<link rel="stylesheet" href="../styles.css">
+<style>
+    :root { --sq-light: #ebecd0; --sq-dark: #739552; --move-duration: 0.3s; }
+    body { padding: 10px; }
+    
+    .topbar { display: flex; align-items: center; justify-content: space-between; padding: 10px 16px; background: var(--panel); border-bottom: 1px solid var(--line); margin-bottom: 15px; border-radius: 8px;}
+    .topbar-center h1 { margin: 0; font-size: 16px; }
+    .icon-btn { background: transparent; border: none; color: #fff; font-size: 20px; cursor: pointer; text-decoration: none; padding: 0; }
+
+    #dg-container { display: flex; flex-direction: column; width: 100%; max-width: 500px; margin: 0 auto; }
+    
+    .board-layout-wrapper { display: flex; align-items: center; justify-content: center; width: 100%; max-width: 500px; height: auto; max-height: 55vh; margin: 0 auto 15px auto; }
+    .chessboard-wrapper { width: 100%; height: 100%; aspect-ratio: 1/1; max-height: 55vh; max-width: 55vh; position: relative; border: 2px solid var(--line); border-radius: 6px; overflow: hidden; box-shadow: 0 4px 14px rgba(0,0,0,0.4); cursor: pointer; }
+    
+    .chessboard { display: grid; grid-template-columns: repeat(8, 1fr); grid-template-rows: repeat(8, 1fr); width: 100%; height: 100%; z-index: 1; position: relative;}
+    .square { position: relative; display: flex; align-items: center; justify-content: center; }
+    .square.light { background-color: var(--sq-light); }
+    .square.dark { background-color: var(--sq-dark); }
+    
+    .coord-rank { position: absolute; top: 2px; left: 3px; font-size: 10px; font-weight: 800; z-index: 2; pointer-events: none; }
+    .coord-file { position: absolute; bottom: 1px; right: 3px; font-size: 10px; font-weight: 800; z-index: 2; pointer-events: none; }
+    .light .coord-text { color: var(--sq-dark); opacity: 0.8;}
+    .dark .coord-text { color: var(--sq-light); opacity: 0.8;}
+
+    .highlight-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; opacity: 0.6; z-index: 1; display: none; }
+    .legal-dot { position: absolute; width: 32%; height: 32%; background: rgba(0,0,0,0.25); border-radius: 50%; z-index: 6; pointer-events: none; }
+    .piece-layer { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 5; }
+    .piece { position: absolute; width: 12.5%; height: 12.5%; background-size: 95%; background-repeat: no-repeat; background-position: center; transition: transform var(--move-duration) ease-in-out, opacity 0.2s ease; pointer-events: none; }
+    .badge-layer { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 10; }
+    .floating-badge { position: absolute; width: 22px; height: 22px; margin-top: -6px; margin-left: -6px; z-index: 10; background: transparent; filter: drop-shadow(0 2px 4px rgba(0,0,0,0.5)); transition: transform var(--move-duration) ease-in-out;}
+    
+    .c-best, .c-excellent { background-color: #84cc16; }
+    .c-brilliant { background-color: #1cb0a6; }
+    .c-miss { background-color: #ec4899; }
+    
+    .slider-wrapper { display: flex; align-items: center; background: var(--panel2); border: 1px solid var(--line); border-radius: 8px; padding: 4px; gap: 4px; margin-bottom: 15px;}
+    .move-slider { flex: 1; display: flex; overflow-x: auto; scroll-behavior: smooth; gap: 10px; padding: 6px; scrollbar-width: none; }
+    .move-slider::-webkit-scrollbar { display: none; }
+    .move-pair { display: flex; align-items: center; gap: 6px; background: #0c0a11; padding: 6px 10px; border-radius: 6px; border: 1px solid var(--line); flex-shrink: 0; }
+    .move-num { color: var(--muted); font-size: 12px; font-weight: bold; width: 18px; }
+    .move-ply { display: flex; align-items: center; gap: 4px; color: #fff; font-size: 13px; font-weight: bold; cursor: pointer; padding: 4px; border-radius: 4px; transition: background 0.2s; }
+    .move-ply:active, .move-ply.active { background: #332d42; color: var(--purple); }
+    .mc-icon { width: 14px; height: 14px; display: flex; align-items: center; justify-content: center; }
+
+    .action-btn { background: var(--panel2); border: 1px solid var(--line); padding: 14px; border-radius: 8px; color: #fff; cursor: pointer; text-align: center; font-size: 15px; transition: background 0.2s; font-weight: bold; flex: 1;}
+    .action-btn:active { background: var(--purple); border-color: var(--purple); }
+
+    .modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); display: flex; align-items: center; justify-content: center; z-index: 1000; }
+    .modal-box { background: var(--panel); border: 1px solid var(--line); padding: 22px; border-radius: 12px; width: 90%; max-width: 340px; text-align: center; max-height:85vh; overflow-y:auto; }
+    .spinner { width: 40px; height: 40px; border: 4px solid var(--line); border-top: 4px solid var(--purple); border-radius: 50%; animation: spin 1s linear infinite; margin: 0 auto 15px auto; }
+    @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+    .hidden { display: none !important; }
+
+    .dg-dot { width:28px; height:28px; border-radius:50%; background:var(--panel2); border:1px solid var(--line); display:flex; align-items:center; justify-content:center; font-size:12px; font-weight:900; color:var(--muted); transition: 0.3s; }
+    .dg-dot.active { border-color:var(--purple); color:var(--purple); box-shadow:0 0 10px rgba(168,85,247,0.5); }
+    .dg-dot.correct { background:#84cc16; color:#111; border-color:#84cc16; }
+    .dg-dot.wrong { background:#ef4444; color:#fff; border-color:#ef4444; }
+</style>
+</head>
+<body>
+
+<div style="max-width: 500px; margin: 0 auto;">
+    <header class="topbar">
+        <a class="icon-btn" href="../puzzle.html" id="btnBack">←</a>
+        <div class="topbar-center"><h1 id="headerTitle">Daily Gauntlet</h1></div>
+        <div style="width:20px;"></div>
+    </header>
+
+    <div style="display:flex; justify-content:center; gap:12px; margin-bottom:15px;" id="dg-progress">
+        <div class="dg-dot" id="dot-0">1</div>
+        <div class="dg-dot" id="dot-1">2</div>
+        <div class="dg-dot" id="dot-2">3</div>
+        <div class="dg-dot" id="dot-3">4</div>
+        <div class="dg-dot" id="dot-4">5</div>
+    </div>
+</div>
+
+<div id="dg-container">
+    <div style="text-align:center; padding:40px;">
+        <div class="spinner"></div>
+        <h3 style="color:var(--purple); margin:0;">Syncing Gauntlet...</h3>
+    </div>
+</div>
+
+<!-- Time Lock Modal -->
+<div id="lockModal" class="modal-overlay hidden">
+    <div class="modal-box">
+        <h2 style="color:var(--purple); margin:0 0 10px 0;">Locked</h2>
+        <p class="muted" style="margin-bottom:15px; font-size:14px;">This gauntlet is not yet available in your timezone.</p>
+        <div style="background:var(--panel2); border:1px solid var(--line); padding:20px; border-radius:8px; margin-bottom:20px; display:flex; flex-direction:column; align-items:center;">
+            <div style="font-size:11px; color:var(--muted); text-transform:uppercase; margin-bottom:6px; font-weight:800;">Unlocks In</div>
+            <div id="countdownText" style="font-size:28px; font-weight:900; color:#fff; font-variant-numeric: tabular-nums;">
+                <div class="spinner" style="width:24px; height:24px; border-width:3px; margin:4px 0 0 0;"></div>
+            </div>
+        </div>
+        <button class="ghost-btn" style="width:100%;" onclick="window.location.href='../puzzle.html'">Back to Menu</button>
+    </div>
+</div>
+
+<!-- Game Over Modal -->
+<div id="gameOverModal" class="modal-overlay hidden">
+    <div class="modal-box">
+        <h2 style="color:var(--purple); margin:0 0 10px 0;" id="endTitle">Gauntlet Complete!</h2>
+        
+        <div style="display:flex; justify-content:space-between; font-size:18px; font-weight:900; background:var(--panel2); padding:15px; border-radius:8px; margin-bottom:20px;">
+            <div style="text-align:center; flex:1;">
+                <div style="color:var(--muted); font-size:11px; text-transform:uppercase;">Solved</div>
+                <div style="color:#84cc16; font-size:24px;" id="finalScore">0</div>
+            </div>
+            <div style="width:1px; background:var(--line);"></div>
+            <div style="text-align:center; flex:1;">
+                <div style="color:var(--muted); font-size:11px; text-transform:uppercase;">Failed</div>
+                <div style="color:#ef4444; font-size:24px;" id="finalWrong">0</div>
+            </div>
+        </div>
+
+        <p class="muted" id="streakNote" style="font-size:13px; margin-bottom:15px; font-weight:700;"></p>
+        <button class="ghost-btn" style="width:100%;" onclick="window.location.href='../puzzle.html'">Return</button>
+    </div>
+</div>
+
+<script src="../debugger.js"></script>
+<script src="pstore.js"></script>
+<script src="pbin.js"></script>
+
+<script type="module">
+import { PuzzleBoard } from './pboard.js';
+
+let dgState = {
+    dateStr: "",
+    ddmmyy: "",
+    queue: [],
+    historyArr: [],
+    m7Data: { streak: 0, bestStreak: 0, lastDate: null }
+};
+
+function mulberry32(a) {
+    return function() {
+      var t = a += 0x6D2B79F5;
+      t = Math.imul(t ^ t >>> 15, t | 1);
+      t ^= t + Math.imul(t ^ t >>> 7, t | 61);
+      return ((t ^ t >>> 14) >>> 0) / 4294967296;
+    }
+}
+
+document.addEventListener("DOMContentLoaded", async () => {
+    const rkey = await getDB("rkey");
+    if(!rkey || rkey.mode !== 7) return window.location.href = "../puzzle.html";
+    dgState.dateStr = rkey.date;
+    document.getElementById("headerTitle").innerText = `Gauntlet: ${dgState.dateStr}`;
+
+    const selParts = dgState.dateStr.split('-');
+    const y = parseInt(selParts[0]);
+    
+    // Time Traveler Filter (<1970)
+    if (y < 1970) {
+        document.getElementById("dg-container").innerHTML = '<div style="text-align:center; padding:30px;"><h3 style="color:#ef4444; margin:0 0 10px 0;">Whoa there, Time Traveler!</h3><p class="muted" style="line-height:1.5; margin-bottom:20px;">Bro is thinking older puzzles would be easy 😭. Please pick a valid timeline.</p><button class="action-btn" onclick="window.location.href=\'../puzzle.html\'">Return</button></div>';
+        return;
+    }
+
+    // Format DDMMYY
+    dgState.ddmmyy = `${selParts[2]}${selParts[1]}${selParts[0].slice(-2)}`;
+
+    const targetDate = new Date(selParts[0], selParts[1] - 1, selParts[2]);
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+
+    // Future Time Lock Check
+    if (targetDate > today) {
+        document.getElementById("lockModal").classList.remove("hidden");
+        setInterval(() => {
+            const diff = targetDate - new Date();
+            if(diff <= 0) return window.location.reload();
+            const h = String(Math.floor(diff / (1000 * 60 * 60))).padStart(2, '0');
+            const m = String(Math.floor((diff / (1000 * 60)) % 60)).padStart(2, '0');
+            const s = String(Math.floor((diff / 1000) % 60)).padStart(2, '0');
+            document.getElementById("countdownText").innerText = `${h}:${m}:${s}`;
+        }, 1000);
+        return;
+    }
+
+    // Load partial completion data from the super-compressed DDMMYY dict
+    const completedLog = await getDB("dailyCompleted") || {};
+    dgState.historyArr = completedLog[dgState.ddmmyy] || [];
+    
+    dgState.m7Data = await getDB("m7pda") || { streak: 0, bestStreak: 0, lastDate: null };
+
+    await buildDailySequence();
+    
+    // Jump straight to Game Over if already 5/5 complete
+    if (dgState.historyArr.length >= 5) {
+        updateProgressDots();
+        triggerGameOver();
+    } else {
+        loadNextDailyPuzzle();
+    }
+});
+
+async function buildDailySequence() {
+    const meta = await getMeta();
+    let cumulative = 0;
+    const virtualArrayMap = [];
+
+    for (let i = 0; i < THEMES.length; i++) {
+        const tMeta = meta[THEMES[i]]?.t1;
+        if (tMeta && tMeta.brackets) {
+            let minFound = Infinity, maxFound = -1;
+            for (let b = 1200; b <= 2000; b += 100) {
+                const br = tMeta.brackets[b.toString()];
+                if (br) {
+                    if (br[0] < minFound) minFound = br[0];
+                    if (br[1] > maxFound) maxFound = br[1];
+                }
+            }
+            if (minFound !== Infinity) {
+                const count = maxFound - minFound + 1;
+                virtualArrayMap.push({ tId: i, name: THEMES[i], offset: minFound, start: cumulative, end: cumulative + count - 1 });
+                cumulative += count;
+            }
+        }
+    }
+
+    // PRNG seeded uniquely to the YYYYMMDD integer
+    const seedInt = Number(dgState.dateStr.replace(/-/g, ''));
+    const prng = mulberry32(seedInt);
+
+    const rolledSet = new Set();
+    while(rolledSet.size < 5) {
+        rolledSet.add(Math.floor(prng() * cumulative));
+    }
+
+    for (let roll of Array.from(rolledSet)) {
+        const mapping = virtualArrayMap.find(x => roll >= x.start && roll <= x.end);
+        const exactIndex = mapping.offset + (roll - mapping.start);
+        const pData = await extractPuzzleData(mapping.name, "1", exactIndex);
+        if (pData) dgState.queue.push(pData);
+    }
+}
+
+function updateProgressDots() {
+    for (let i = 0; i < 5; i++) {
+        const dot = document.getElementById(`dot-${i}`);
+        dot.className = "dg-dot"; // reset
+        if (i < dgState.historyArr.length) {
+            const isCorrect = dgState.historyArr[i].startsWith("1");
+            dot.classList.add(isCorrect ? "correct" : "wrong");
+        } else if (i === dgState.historyArr.length) {
+            dot.classList.add("active");
+        }
+    }
+}
+
+async function logDailyProgress(isWin, timeMs, currentPuzzle) {
+    const statusVal = isWin ? "1" : "0";
+    const timeSec = (timeMs / 1000).toFixed(1); 
+    
+    // Store packed format: e.g., "1|4.2" (Correct, 4.2 seconds)
+    dgState.historyArr.push(`${statusVal}|${timeSec}`);
+    
+    // Save to the DDMMYY indexed map immediately
+    let completedLog = await getDB("dailyCompleted") || {};
+    completedLog[dgState.ddmmyy] = dgState.historyArr;
+    await setDB("dailyCompleted", completedLog);
+    
+    // Standard Global History Logging
+    await logPuzzleResult(7, isWin ? 0 : 1, currentPuzzle.t, 1, currentPuzzle.i, timeMs);
+}
+
+async function loadNextDailyPuzzle() {
+    updateProgressDots();
+
+    if (dgState.historyArr.length >= 5 || dgState.historyArr.length >= dgState.queue.length) {
+        return triggerGameOver();
+    }
+
+    const currentPuzzle = dgState.queue[dgState.historyArr.length];
+    const themeStr = THEMES[currentPuzzle.t] || "Tactics";
+
+    window.activeBoard = new PuzzleBoard("dg-container", {
+        isFirstPuzzle: (dgState.historyArr.length === 0), 
+        themeHidden: true,
+        themeName: themeStr,
+        puzzleData: currentPuzzle,
+        blindLevel: 0,
+        // UI Request: Show Best Streak and Current Streak instead of Rating and Tier
+        topBar: { rating: "Best: " + dgState.m7Data.bestStreak, tier: "Streak: " + dgState.m7Data.streak }, 
+        actions: [],
+        onComplete: async (timeMs) => {
+            await logDailyProgress(true, timeMs, currentPuzzle);
+            setTimeout(() => window.loadNextDailyPuzzle(), 500); 
+        },
+        onFail: async (timeMs) => {
+            await logDailyProgress(false, timeMs, currentPuzzle);
+            document.getElementById("action-container").innerHTML = `
+                <button class="action-btn" onclick="window.activeBoard.playSolution()">Show Solution</button>
+                <button class="action-btn" style="background:var(--purple); border-color:var(--purple);" onclick="window.loadNextDailyPuzzle()">Next ⏭️</button>
+            `;
+        }
+    });
+}
+window.loadNextDailyPuzzle = loadNextDailyPuzzle;
+
+async function triggerGameOver() {
+    if (window.activeBoard && window.activeBoard.boardClickArea) {
+        window.activeBoard.boardClickArea.style.pointerEvents = 'none';
+    }
+
+    let correctCount = dgState.historyArr.filter(x => x.startsWith("1")).length;
+    document.getElementById("finalScore").innerText = correctCount;
+    document.getElementById("finalWrong").innerText = (5 - correctCount);
+    
+    // Strict 3/5 Streak Logic Check
+    const now = new Date();
+    const todayStr = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}`;
+    
+    const yest = new Date(now);
+    yest.setDate(yest.getDate() - 1);
+    const yestStr = `${yest.getFullYear()}-${String(yest.getMonth()+1).padStart(2,'0')}-${String(yest.getDate()).padStart(2,'0')}`;
+
+    const streakNote = document.getElementById("streakNote");
+    let streakMsg = "";
+
+    if (correctCount >= 3) {
+        document.getElementById("endTitle").innerText = "Gauntlet Passed!";
+        document.getElementById("endTitle").style.color = "#84cc16";
+
+        if (dgState.dateStr === todayStr) {
+            // Only update active streak if solving TODAY'S gauntlet
+            if (dgState.m7Data.lastDate === yestStr) dgState.m7Data.streak++;
+            else if (dgState.m7Data.lastDate !== todayStr) dgState.m7Data.streak = 1;
+            
+            dgState.m7Data.lastDate = todayStr;
+            if (dgState.m7Data.streak > dgState.m7Data.bestStreak) dgState.m7Data.bestStreak = dgState.m7Data.streak;
+            streakMsg = `🔥 Active Streak: ${dgState.m7Data.streak} (Best: ${dgState.m7Data.bestStreak})`;
+            streakNote.style.color = "#84cc16";
+        } else {
+            streakMsg = `Archived gauntlet completed! Play today's gauntlet to increase your active streak.`;
+            streakNote.style.color = "var(--purple)";
+        }
+    } else {
+        document.getElementById("endTitle").innerText = "Gauntlet Failed";
+        document.getElementById("endTitle").style.color = "#ef4444";
+
+        if (dgState.dateStr === todayStr) {
+            dgState.m7Data.streak = 0; // Streak broken
+            streakMsg = `Failed to score 3/5. Your active streak was broken.`;
+        } else {
+            streakMsg = `Archived gauntlet failed. You needed at least 3/5 to pass.`;
+        }
+        streakNote.style.color = "#ef4444";
+    }
+
+    streakNote.innerText = streakMsg;
+    await setDB("m7pda", dgState.m7Data);
+
+    document.getElementById("gameOverModal").classList.remove("hidden");
+}
+</script>
+</body>
+</html>

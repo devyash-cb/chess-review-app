@@ -1,0 +1,9 @@
+{
+  "Piece-set-1": {
+    "src_path": "pieces/piece-set-1/",
+    "pieces": {
+      "wp": "wp.png", "wn": "wn.png", "wb": "wb.png", "wr": "wr.png", "wq": "wq.png", "wk": "wk.png",
+      "bp": "bp.png", "bn": "bn.png", "bb": "bb.png", "br": "br.png", "bq": "bq.png", "bk": "bk.png"
+    }
+  }
+}

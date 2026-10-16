@@ -1,0 +1,223 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Settings · Chess Review</title>
+<link rel="stylesheet" href="styles.css">
+<style>
+:root{--preview-light:#ebecd0;--preview-dark:#739552}
+.topbar{display:flex;align-items:center;padding:12px 16px;background:var(--panel);border-bottom:1px solid var(--line)}
+.topbar h1{margin:0;font-size:18px;margin-left:15px}
+.settings-section{background:var(--panel);border:1px solid var(--line);border-radius:12px;margin-bottom:20px;padding:20px}
+.settings-section h2{font-size:18px;margin-top:0;margin-bottom:15px;color:var(--purple)}
+.profile-header{display:flex;align-items:flex-start;margin-bottom:15px;width:100%}
+.username-display{font-size:22px;font-weight:bold}
+.edit-btn{background:transparent;border:none;cursor:pointer;color:var(--muted)}
+.edit-btn:active{color:var(--purple)}
+.pill-toggle{display:flex;background:var(--panel2);border-radius:20px;padding:4px;width:fit-content;border:1px solid var(--line);margin-top:10px}
+.pill-toggle button{background:transparent;border:none;color:var(--muted);padding:6px 16px;border-radius:16px;font-size:12px;font-weight:bold;cursor:pointer;transition:all 0.2s}
+.pill-toggle button.active{background:var(--purple);color:#fff}
+.badge-list{display:flex;flex-direction:column;gap:8px;margin-top:15px}
+.badge-row{display:flex;align-items:center;justify-content:space-between;font-weight:bold;font-size:14px;background:#0c0a11;padding:8px 12px;border-radius:8px;border:1px solid var(--line)}
+.badge-left{display:flex;align-items:center;gap:10px;width:130px}
+.badge-mid{color:var(--muted);opacity:0.6}
+.badge-count{min-width:30px;text-align:right;color:#fff}
+.svg-icon,.mc-icon{width:18px;height:18px;display:block}
+.stats-grid{display:grid;grid-template-columns:1fr 1fr;gap:15px}
+.stat-card{background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:10px;text-align:center}
+.stat-value{font-size:20px;font-weight:800;color:#fff;margin-top:5px}
+.stat-label{font-size:11px;text-transform:uppercase;color:var(--muted);font-weight:bold}
+.divider{border:0;height:1px;background:var(--line);margin:20px 0}
+.carousel-container{display:flex;align-items:center;gap:10px;justify-content:center;margin:15px 0}
+.carousel-btn{background:var(--panel2);border:1px solid var(--line);color:white;width:40px;height:40px;border-radius:50%;font-weight:bold;cursor:pointer;font-size:18px}
+.carousel-btn:active{background:var(--purple)}
+.carousel-view{flex:1;text-align:center;font-weight:bold}
+.mini-board{display:grid;grid-template-columns:1fr 1fr;width:60px;height:60px;margin:5px auto;border:1px solid var(--line);border-radius:4px;overflow:hidden}
+.mini-sq{width:100%;height:100%}
+.piece-showcase{display:flex;flex-direction:column;gap:2px;align-items:center;margin-top:10px;background:var(--panel2);padding:10px;border-radius:8px;border:1px solid var(--line)}
+.piece-row{display:flex;gap:2px}
+.piece-demo{width:30px;height:30px;background-size:cover}
+.live-board-wrapper{width:100%;max-width:320px;margin:20px auto 0 auto;aspect-ratio:1/1;border:2px solid var(--line);border-radius:6px;overflow:hidden;position:relative}
+.live-board{display:grid;grid-template-columns:repeat(8,1fr);grid-template-rows:repeat(8,1fr);width:100%;height:100%}
+.live-sq.light{background-color:var(--preview-light)}
+.live-sq.dark{background-color:var(--preview-dark)}
+.live-piece-layer{position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none}
+.live-piece{position:absolute;width:12.5%;height:12.5%;background-size:95%;background-repeat:no-repeat;background-position:center}
+.slider-row{margin-bottom:15px}
+.slider-row label{display:flex;justify-content:space-between;font-size:13px;font-weight:600;margin-bottom:6px;color:var(--muted)}
+.slider-row input[type="range"]{width:100%;accent-color:var(--purple)}
+.modal-overlay{position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.85);display:flex;align-items:center;justify-content:center;z-index:1000}
+.modal-box{background:var(--panel);border:1px solid var(--line);padding:20px;border-radius:12px;width:90%;max-width:350px;text-align:left}
+.modal-box h3{margin-top:0;color:var(--purple);text-align:center}
+.modal-box input[type="text"],.modal-box input[type="color"]{width:100%;padding:10px;background:#0c0a11;color:white;border:1px solid var(--line);border-radius:6px;margin-bottom:15px;box-sizing:border-box}
+.modal-btn{width:100%;padding:12px;background:var(--purple);color:white;border:none;border-radius:6px;font-weight:bold;cursor:pointer;margin-bottom:8px}
+.modal-btn.secondary{background:var(--panel2)}
+.hidden{display:none!important}
+.link-list{display:flex;flex-direction:column;gap:10px}
+.link-list button{background:var(--panel2);border:1px solid var(--line);padding:15px;border-radius:8px;color:#fff;font-weight:bold;text-align:left;cursor:pointer}
+.link-list button:active{background:#332d42}
+.data-list-item{display:flex;align-items:center;gap:10px;border-bottom:1px solid var(--line);padding:10px 0}
+.data-list-item input[type="checkbox"]{transform:scale(1.2);accent-color:var(--purple);cursor:pointer;flex-shrink:0}
+.data-meta{font-size:11px;color:var(--muted)}
+.data-title{font-size:13px;font-weight:bold;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+@media(max-width:500px){.stats-grid{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<header class="topbar">
+<a class="icon-btn" href="home.html" aria-label="Back" style="text-decoration:none;font-size:20px;color:#fff">←</a>
+<h1>Settings</h1>
+</header>
+<main class="page">
+<section class="settings-section">
+<div class="profile-header">
+<div style="display:flex;flex-direction:column;width:100%">
+<div style="display:flex;align-items:center;justify-content:space-between">
+<div class="username-display" id="displayUsername">Player</div>
+<button class="edit-btn" onclick="openEditUsername()" title="Edit Username"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></svg></button>
+</div>
+<div class="pill-toggle"><button id="btnModern" onclick="setIconStyle('svg')">App Specific</button><button id="btnLegacy" onclick="setIconStyle('legacy')">Legacy</button></div>
+</div>
+</div>
+<div class="badge-list" id="profileBadges"></div>
+</section>
+<section class="settings-section">
+<h2>Statistics</h2>
+<div class="stats-grid">
+<div class="stat-card"><div class="stat-label">Total Games</div><div class="stat-value" id="stGames">0</div></div>
+<div class="stat-card"><div class="stat-label">Total Moves</div><div class="stat-value" id="stMoves">0</div></div>
+<div class="stat-card"><div class="stat-label">Total Won</div><div class="stat-value" id="stWon">0</div></div>
+<div class="stat-card"><div class="stat-label">Total Lost</div><div class="stat-value" id="stLost">0</div></div>
+<div class="stat-card"><div class="stat-label">Total Draw</div><div class="stat-value" id="stDraw">0</div></div>
+<div class="stat-card"><div class="stat-label">Avg Accuracy</div><div class="stat-value" id="stAcc">0%</div><div style="font-size:9px;color:var(--muted)">(Est)</div></div>
+<div class="stat-card"><div class="stat-label">Avg ELO / Game</div><div class="stat-value" id="stElo">0</div><div style="font-size:9px;color:var(--muted)">(Est)</div></div>
+<div class="stat-card"><div class="stat-label">Fav Opening</div><div class="stat-value" id="stFavOp" style="font-size:12px">—</div></div>
+<div class="stat-card"><div class="stat-label">Global Win Rate</div><div class="stat-value" id="stWinRate">0%</div></div>
+</div>
+<h3 style="font-size:14px;margin-top:20px;border-bottom:1px solid var(--line);padding-bottom:5px">Performance as White</h3>
+<div class="stats-grid" style="margin-top:10px">
+<div class="stat-card"><div class="stat-label">White Games</div><div class="stat-value" id="stWGames">0</div></div>
+<div class="stat-card"><div class="stat-label">White Win Rate</div><div class="stat-value" id="stWWinRate">0%</div></div>
+<div class="stat-card" style="grid-column:span 2;display:flex;justify-content:space-around">
+<div><div class="stat-label">Won</div><div class="stat-value" id="stWWon" style="font-size:16px">0</div></div>
+<div><div class="stat-label">Lost</div><div class="stat-value" id="stWLost" style="font-size:16px">0</div></div>
+<div><div class="stat-label">Draw</div><div class="stat-value" id="stWDraw" style="font-size:16px">0</div></div>
+</div>
+</div>
+<hr class="divider">
+<h3 style="font-size:14px;margin-top:10px;border-bottom:1px solid var(--line);padding-bottom:5px">Performance as Black</h3>
+<div class="stats-grid" style="margin-top:10px">
+<div class="stat-card"><div class="stat-label">Black Games</div><div class="stat-value" id="stBGames">0</div></div>
+<div class="stat-card"><div class="stat-label">Black Win Rate</div><div class="stat-value" id="stBWinRate">0%</div></div>
+<div class="stat-card" style="grid-column:span 2;display:flex;justify-content:space-around">
+<div><div class="stat-label">Won</div><div class="stat-value" id="stBWon" style="font-size:16px">0</div></div>
+<div><div class="stat-label">Lost</div><div class="stat-value" id="stBLost" style="font-size:16px">0</div></div>
+<div><div class="stat-label">Draw</div><div class="stat-value" id="stBDraw" style="font-size:16px">0</div></div>
+</div>
+</div>
+</section>
+<section class="settings-section">
+<h2>Coach Settings</h2>
+<div class="slider-row"><label>Voice Speech Speed <span id="valSpeech">1.0x</span></label><input type="range" id="cfgSpeechRate" min="1.0" max="2.5" step="0.25"></div>
+</section>
+<section class="settings-section">
+<h2>Chess Board</h2>
+<div class="slider-row"><label>Move Animation Speed <span id="valMoveSpeed">0.4s</span></label><input type="range" id="cfgMoveSpeed" min="0.1" max="1.0" step="0.1"></div>
+<div class="slider-row"><label>Chat Reading Time <span id="valReadTime">3s</span></label><input type="range" id="cfgReadTime" min="1" max="10" step="1"></div>
+<h3 style="font-size:14px;margin-top:20px;color:var(--muted)">Board Palette</h3>
+<div class="carousel-container">
+<button class="carousel-btn" onclick="slidePalette(-1)">&#8249;</button>
+<div class="carousel-view"><div id="paletteName">Default Green</div><div class="mini-board" id="miniBoard"><div class="mini-sq" style="background:var(--preview-light)"></div><div class="mini-sq" style="background:var(--preview-dark)"></div><div class="mini-sq" style="background:var(--preview-dark)"></div><div class="mini-sq" style="background:var(--preview-light)"></div></div></div>
+<button class="carousel-btn" onclick="slidePalette(1)">&#8250;</button>
+<button class="carousel-btn" onclick="openModal('customBoardModal')" style="background:var(--purple);border:none">+</button>
+</div>
+<h3 style="font-size:14px;margin-top:20px;color:var(--muted)">Piece Set</h3>
+<div class="carousel-container">
+<button class="carousel-btn" onclick="slidePieces(-1)">&#8249;</button>
+<div class="carousel-view"><div id="pieceSetName">Loading...</div><div class="piece-showcase" id="pieceShowcase"></div></div>
+<button class="carousel-btn" onclick="slidePieces(1)">&#8250;</button>
+</div>
+<div class="live-board-wrapper"><div class="live-board" id="liveBoardGrid"></div><div class="live-piece-layer" id="livePieceLayer"></div></div>
+</section>
+<section class="settings-section">
+<h2>Data Management</h2>
+<div style="display:flex;gap:10px;height:240px">
+<div style="flex:7;overflow-y:auto;background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:8px" id="dataGamesList"></div>
+<div style="flex:3;display:flex;flex-direction:column;gap:8px;overflow-y:auto">
+<button id="btnSelectAll" style="padding:10px;border-radius:6px;font-weight:bold;cursor:pointer;background:var(--purple);border:none;color:white;font-size:12px">Select All</button>
+<button id="btnDeselectAll" style="padding:10px;border-radius:6px;font-weight:bold;cursor:pointer;background:var(--panel);border:1px solid var(--line);color:white;font-size:12px">Deselect</button>
+<button id="btnImportData" style="padding:10px;border-radius:6px;font-weight:bold;cursor:pointer;background:var(--purple);border:none;color:white;font-size:12px">Import</button>
+<input type="file" id="importFile" accept=".crmcb" style="display:none">
+<button id="btnExportDel" style="padding:10px;border-radius:6px;font-weight:bold;cursor:pointer;background:var(--panel);border:1px solid var(--line);color:white;font-size:12px">Export&Del</button>
+<button id="btnDelSel" style="padding:10px;border-radius:6px;font-weight:bold;cursor:pointer;background:var(--red);border:none;color:white;font-size:12px">Delete</button>
+</div>
+</div>
+</section>
+<section class="settings-section">
+<h2>Help & About</h2>
+<div class="link-list">
+<button onclick="openModal('helpModal')">Get Help</button>
+<button onclick="openModal('contactModal')">Contact Devs</button>
+<button onclick="openModal('aboutModal')">About</button>
+</div>
+</section>
+</main>
+<div id="usernameModal" class="modal-overlay hidden"><div class="modal-box"><h3>Edit Username</h3><input type="text" id="inpUsername" placeholder="Enter Chess.com username"><button class="modal-btn" onclick="saveUsername()">Save</button><button class="modal-btn secondary" onclick="closeModal('usernameModal')">Cancel</button></div></div>
+<div id="customBoardModal" class="modal-overlay hidden"><div class="modal-box"><h3>Custom Board</h3><label style="color:var(--muted);font-size:12px">Light Square Color</label><input type="color" id="inpColorLight" value="#ebecd0"><label style="color:var(--muted);font-size:12px">Dark Square Color</label><input type="color" id="inpColorDark" value="#739552"><button class="modal-btn" onclick="addCustomPalette()">Add & Select</button><button class="modal-btn secondary" onclick="closeModal('customBoardModal')">Cancel</button></div></div>
+<div id="helpModal" class="modal-overlay hidden"><div class="modal-box"><h3>Help</h3><p style="font-size:14px;line-height:1.5">Offline-first analysis engine. Deep calculations execute on local background workers.</p><button class="modal-btn secondary" onclick="closeModal('helpModal')">Close</button></div></div>
+<div id="contactModal" class="modal-overlay hidden"><div class="modal-box"><h3>Contact Devs</h3><p style="font-size:14px;line-height:1.5">Reach out via the GitHub repository or application dashboard.</p><button class="modal-btn secondary" onclick="closeModal('contactModal')">Close</button></div></div>
+<div id="aboutModal" class="modal-overlay hidden"><div class="modal-box"><h3>About Chess Review</h3><p style="font-size:14px;line-height:1.5;color:var(--muted)">Chess Review is an advanced offline-first tool designed to deeply analyze chess games, track accuracy, estimate performance ratings, and categorize moves using powerful local engine evaluations.</p><button class="modal-btn secondary" onclick="closeModal('aboutModal')">Close</button></div></div>
+<script>
+let settings=JSON.parse(localStorage.getItem("chessReviewSettings")||"{}");
+const ICONS={brilliant:`<svg viewBox="0 0 24 24" class="svg-icon"><rect width="24" height="24" rx="12" fill="#1cb0a6"/><path d="M7 6h2l-1 8H6zM15 6h2l-1 8h-2zM7 16h2v2H7zM15 16h2v2h-2z" fill="#fff"/></svg>`,great:`<svg viewBox="0 0 24 24" class="svg-icon"><rect width="24" height="24" rx="12" fill="#3b82f6"/><path d="M11 6h2l-1 8h-2zM11 16h2v2h-2z" fill="#fff"/></svg>`,best:`<svg viewBox="0 0 24 24" class="svg-icon"><rect width="24" height="24" rx="12" fill="#84cc16"/><path d="M12 2l3 6 7 1-5 5 1 7-6-3-6 3 1-7-5-5 7-1z" fill="#fff"/></svg>`,excellent:`<svg viewBox="0 0 24 24" class="svg-icon"><rect width="24" height="24" rx="12" fill="#84cc16"/><path d="M9 16.2L4.8 12l-1.4 1.4L9 19 21 7l-1.4-1.4L9 16.2z" fill="#fff"/></svg>`,good:`<svg viewBox="0 0 24 24" class="svg-icon"><rect width="24" height="24" rx="12" fill="#65a30d"/><path d="M9 16.2L4.8 12l-1.4 1.4L9 19 21 7l-1.4-1.4L9 16.2z" fill="#fff"/></svg>`,book:`<svg viewBox="0 0 24 24" class="svg-icon"><rect width="24" height="24" rx="12" fill="#b4855d"/><path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-7 14H6V7h6v10zm7 0h-6V7h6v10z" fill="#fff"/></svg>`,inaccuracy:`<svg viewBox="0 0 24 24" class="svg-icon"><rect width="24" height="24" rx="12" fill="#eab308"/><path d="M10 6A2 2 0 1 1 12 8v4h-2V8a2 2 0 1 1 2-2h-2zm2 10h-2v2h2v-2zM15 6h2l-1 8h-2zM15 16h2v2h-2z" fill="#fff"/></svg>`,mistake:`<svg viewBox="0 0 24 24" class="svg-icon"><rect width="24" height="24" rx="12" fill="#f97316"/><path d="M12 6a3 3 0 0 0-3 3h2a1 1 0 1 1 2 0c0 2-3 2-3 5h2c0-2 3-2 3-5a3 3 0 0 0-3-3zm-1 9h2v2h-2v-2z" fill="#fff"/></svg>`,miss:`<svg viewBox="0 0 24 24" class="svg-icon"><rect width="24" height="24" rx="12" fill="#ec4899"/><path d="M5 11h14v2H5z" fill="#fff"/></svg>`,blunder:`<svg viewBox="0 0 24 24" class="svg-icon"><rect width="24" height="24" rx="12" fill="#ef4444"/><path d="M8 6a2 2 0 0 0-2 2h2a0 0 0 0 1 0 0c0 2-2 2-2 4h2c0-1 2-1 2-4a2 2 0 0 0-2-2zm-1 9h2v2H7v-2zm9-9a2 2 0 0 0-2 2h2a0 0 0 0 1 0 0c0 2-2 2-2 4h2c0-1 2-1 2-4a2 2 0 0 0-2-2zm-1 9h2v2h-2v-2z" fill="#fff"/></svg>`};
+const CLASS_IDS={brilliant:1,great:2,best:3,excellent:4,good:5,book:6,inaccuracy:7,mistake:8,miss:9,blunder:0};
+const CLASS_COLORS={brilliant:'#1cb0a6',great:'#3b82f6',best:'#84cc16',excellent:'#84cc16',good:'#65a30d',book:'#b4855d',inaccuracy:'#eab308',mistake:'#f97316',miss:'#ec4899',blunder:'#ef4444'};
+const ORDERED_CLASSES=["brilliant","great","best","excellent","good","book","inaccuracy","mistake","miss","blunder"];
+let palettes=[{name:"Default Green",w:"#ebecd0",b:"#739552"},{name:"Classic Blue",w:"#dee3e6",b:"#8ca2ad"},{name:"Warm Wood",w:"#f0d9b5",b:"#b58863"},{name:"Slate Grey",w:"#cccccc",b:"#888888"}];
+let curPaletteIdx=0;let pieceSets=[];let pieceSetKeys=[];let curPieceIdx=0;
+document.addEventListener("DOMContentLoaded",async()=>{
+try{if(window.Capacitor&&window.Capacitor.Plugins&&window.Capacitor.Plugins.App){window.Capacitor.Plugins.App.addListener('backButton',()=>{const modals=['usernameModal','customBoardModal','helpModal','contactModal','aboutModal'];const openM=modals.find(m=>!document.getElementById(m).classList.contains('hidden'));if(openM)closeModal(openM);else window.location.href='home.html';});}}catch(e){}
+document.getElementById("displayUsername").textContent=settings.username||"Player";
+if(!settings.iconStyle)settings.iconStyle='svg';
+setIconStyle(settings.iconStyle);
+document.getElementById("cfgSpeechRate").value=settings.speechRate||1.0;document.getElementById("valSpeech").textContent=(settings.speechRate||1.0)+"x";
+document.getElementById("cfgMoveSpeed").value=settings.moveSpeed||0.4;document.getElementById("valMoveSpeed").textContent=(settings.moveSpeed||0.4)+"s";
+document.getElementById("cfgReadTime").value=settings.readingDuration||3;document.getElementById("valReadTime").textContent=(settings.readingDuration||3)+"s";
+["cfgSpeechRate","cfgMoveSpeed","cfgReadTime"].forEach(id=>{document.getElementById(id).addEventListener("input",(e)=>{if(id==="cfgSpeechRate"){settings.speechRate=parseFloat(e.target.value);document.getElementById("valSpeech").textContent=e.target.value+"x";}if(id==="cfgMoveSpeed"){settings.moveSpeed=parseFloat(e.target.value);document.getElementById("valMoveSpeed").textContent=e.target.value+"s";}if(id==="cfgReadTime"){settings.readingDuration=parseInt(e.target.value);document.getElementById("valReadTime").textContent=e.target.value+"s";}localStorage.setItem("chessReviewSettings",JSON.stringify(settings));});});
+if(settings.wHexCode&&settings.bHexCode){let found=palettes.findIndex(p=>p.w===settings.wHexCode&&p.b===settings.bHexCode);if(found!==-1)curPaletteIdx=found;else{palettes.push({name:"Custom Palette 1",w:settings.wHexCode,b:settings.bHexCode});curPaletteIdx=palettes.length-1;}}
+renderPalette();
+try{const res=await fetch('pieces.json');pieceSets=await res.json();pieceSetKeys=Object.keys(pieceSets);let active=settings.activePieceSet||"Piece-set-1";curPieceIdx=pieceSetKeys.indexOf(active);if(curPieceIdx===-1)curPieceIdx=0;renderPieceSet();renderLiveBoard();}catch(e){document.getElementById("pieceSetName").textContent="Error loading pieces";}
+loadStats();
+loadDataGames();
+});
+function getIconHtml(cls){if(settings.iconStyle==='legacy'){return`<img src="pieces/mc/${CLASS_IDS[cls]}.png" class="mc-icon" alt="${cls}">`;}else{return ICONS[cls]||ICONS.good;}}
+function renderProfileBadges(){const list=document.getElementById("profileBadges");list.innerHTML=ORDERED_CLASSES.map(c=>`<div class="badge-row"><div class="badge-left" style="color: ${CLASS_COLORS[c]}">${getIconHtml(c)}<span style="text-transform: capitalize;">${c}</span></div><div class="badge-mid">-</div><div class="badge-count" id="stat_${c}">0</div></div>`).join("");}
+window.setIconStyle=function(style){settings.iconStyle=style;localStorage.setItem("chessReviewSettings",JSON.stringify(settings));document.getElementById("btnModern").classList.toggle("active",style==='svg');document.getElementById("btnLegacy").classList.toggle("active",style==='legacy');renderProfileBadges();loadStats();};
+function openModal(id){document.getElementById(id).classList.remove('hidden');}
+function closeModal(id){document.getElementById(id).classList.add('hidden');}
+window.openModal=openModal;window.closeModal=closeModal;
+window.openEditUsername=function(){document.getElementById("inpUsername").value=settings.username||"";openModal("usernameModal");};
+window.saveUsername=function(){const val=document.getElementById("inpUsername").value.trim();if(val){settings.username=val;localStorage.setItem("chessReviewSettings",JSON.stringify(settings));document.getElementById("displayUsername").textContent=val;closeModal('usernameModal');}};
+window.addCustomPalette=function(){const w=document.getElementById("inpColorLight").value;const b=document.getElementById("inpColorDark").value;const customCount=palettes.filter(p=>p.name.startsWith("Custom Palette")).length+1;palettes.push({name:"Custom Palette "+customCount,w,b});curPaletteIdx=palettes.length-1;savePalette();closeModal('customBoardModal');};
+window.slidePalette=function(dir){curPaletteIdx+=dir;if(curPaletteIdx<0)curPaletteIdx=palettes.length-1;if(curPaletteIdx>=palettes.length)curPaletteIdx=0;savePalette();};
+function savePalette(){const p=palettes[curPaletteIdx];document.getElementById("paletteName").textContent=p.name;document.documentElement.style.setProperty('--preview-light',p.w);document.documentElement.style.setProperty('--preview-dark',p.b);settings.wHexCode=p.w;settings.bHexCode=p.b;localStorage.setItem("chessReviewSettings",JSON.stringify(settings));}
+function renderPalette(){const p=palettes[curPaletteIdx];document.getElementById("paletteName").textContent=p.name;document.documentElement.style.setProperty('--preview-light',p.w);document.documentElement.style.setProperty('--preview-dark',p.b);}
+window.slidePieces=function(dir){if(pieceSetKeys.length===0)return;curPieceIdx+=dir;if(curPieceIdx<0)curPieceIdx=pieceSetKeys.length-1;if(curPieceIdx>=pieceSetKeys.length)curPieceIdx=0;settings.activePieceSet=pieceSetKeys[curPieceIdx];localStorage.setItem("chessReviewSettings",JSON.stringify(settings));renderPieceSet();renderLiveBoard();};
+function renderPieceSet(){if(pieceSetKeys.length===0)return;const key=pieceSetKeys[curPieceIdx];document.getElementById("pieceSetName").textContent=key;const setInfo=pieceSets[key];const path=setInfo.src_path;const pc=setInfo.pieces;const getImg=(code)=>`<div class="piece-demo" style="background-image:url(${path}${pc[code]})"></div>`;const bMajors=['br','bn','bb','bq','bk','bb','bn','br'].map(getImg).join('');const bPawns=Array(8).fill(getImg('bp')).join('');const wPawns=Array(8).fill(getImg('wp')).join('');const wMajors=['wr','wn','wb','wq','wk','wb','wn','wr'].map(getImg).join('');document.getElementById("pieceShowcase").innerHTML=`<div class="piece-row">${bMajors}</div><div class="piece-row">${bPawns}</div><div class="piece-row">${wPawns}</div><div class="piece-row">${wMajors}</div>`;}
+function renderLiveBoard(){const grid=document.getElementById("liveBoardGrid");const layer=document.getElementById("livePieceLayer");grid.innerHTML="";layer.innerHTML="";for(let r=8;r>=1;r--){for(let f=0;f<8;f++){const sq=document.createElement("div");sq.className=`live-sq ${(r+f)%2!==0?'light':'dark'}`;grid.appendChild(sq);}}if(pieceSetKeys.length===0)return;const key=pieceSetKeys[curPieceIdx];const path=pieceSets[key].src_path;const pDict=pieceSets[key].pieces;const startPos=[['br','bn','bb','bq','bk','bb','bn','br'],['bp','bp','bp','bp','bp','bp','bp','bp'],[null,null,null,null,null,null,null,null],[null,null,null,null,null,null,null,null],[null,null,null,null,null,null,null,null],[null,null,null,null,null,null,null,null],['wp','wp','wp','wp','wp','wp','wp','wp'],['wr','wn','wb','wq','wk','wb','wn','wr']];for(let row=0;row<8;row++){for(let col=0;col<8;col++){const pCode=startPos[row][col];if(pCode){const p=document.createElement("div");p.className="live-piece";p.style.backgroundImage=`url(${path}${pDict[pCode]})`;p.style.transform=`translate(${col*100}%, ${row*100}%)`;layer.appendChild(p);}}}}
+async function loadStats(){try{const db=await new Promise((resolve,reject)=>{const req=indexedDB.open("ChessReviewDB",3);req.onsuccess=()=>resolve(req.result);req.onerror=()=>reject(req.error);});if(db.objectStoreNames.contains("moveStats")){const tx=db.transaction("moveStats","readonly");const req=tx.objectStore("moveStats").get("global");req.onsuccess=()=>{const ms=req.result;if(ms){ORDERED_CLASSES.forEach(c=>{const el=document.getElementById("stat_"+c);if(el)el.textContent=ms[c]||0;});}};}if(db.objectStoreNames.contains("userStats")){const tx=db.transaction("userStats","readonly");const req=tx.objectStore("userStats").get("global");req.onsuccess=()=>{const st=req.result;if(st){document.getElementById("stGames").textContent=st.totalGames||0;document.getElementById("stMoves").textContent=st.totalMoves||0;document.getElementById("stWon").textContent=st.totalWon||0;document.getElementById("stLost").textContent=st.totalLost||0;document.getElementById("stDraw").textContent=st.totalDraw||0;document.getElementById("stAcc").textContent=(st.avgAcc||0)+"%";document.getElementById("stElo").textContent=st.avgElo||0;document.getElementById("stFavOp").textContent=st.favOpening||"—";const gWinRate=st.totalGames?Math.round((st.totalWon/st.totalGames)*100):0;document.getElementById("stWinRate").textContent=gWinRate+"%";document.getElementById("stWGames").textContent=st.wGames||0;const wWinRate=st.wGames?Math.round((st.wWon/st.wGames)*100):0;document.getElementById("stWWinRate").textContent=wWinRate+"%";document.getElementById("stWWon").textContent=st.wWon||0;document.getElementById("stWLost").textContent=st.wLost||0;document.getElementById("stWDraw").textContent=st.wDraw||0;document.getElementById("stBGames").textContent=st.bGames||0;const bWinRate=st.bGames?Math.round((st.bWon/st.bGames)*100):0;document.getElementById("stBWinRate").textContent=bWinRate+"%";document.getElementById("stBWon").textContent=st.bWon||0;document.getElementById("stBLost").textContent=st.bLost||0;document.getElementById("stBDraw").textContent=st.bDraw||0;}};}db.close();}catch(e){}}
+async function getDB(){return new Promise((resolve)=>{const req=indexedDB.open("ChessReviewDB",3);req.onsuccess=()=>resolve(req.result);req.onerror=()=>resolve(null);});}
+async function loadDataGames(){const local=JSON.parse(localStorage.getItem("chessReviewGames")||"[]");const db=await getDB();let idb=[];if(db&&db.objectStoreNames.contains("games")){idb=await new Promise(r=>{const req=db.transaction("games","readonly").objectStore("games").getAll();req.onsuccess=()=>r(req.result||[]);req.onerror=()=>r([]);});db.close();}const map=new Map(idb.map(g=>[g.id,g]));let all=[...local.map(g=>map.get(g.id)||g)];for(const g of idb)if(!all.find(x=>x.id===g.id))all.push(g);all.sort((a,b)=>new Date(b.playedAt||0)-new Date(a.playedAt||0));const list=document.getElementById("dataGamesList");if(all.length===0){list.innerHTML="<p class='muted' style='font-size:12px;text-align:center;margin-top:100px;'>No games saved.</p>";return;}list.innerHTML=all.map(g=>`<div class="data-list-item"><input type="checkbox" value="${g.id}" class="game-cb"><div><div class="data-title">${g.white} vs ${g.black}</div><div class="data-meta">${g.opening||"Unidentified"} · ${new Date(g.playedAt||0).toLocaleDateString()}</div>${g.tag?`<div class="data-meta" style="color:var(--purple)">🏷️ ${g.tag}</div>`:''}</div></div>`).join("");}
+document.getElementById("btnSelectAll").onclick=()=>{document.querySelectorAll('.game-cb').forEach(cb=>cb.checked=true);};
+document.getElementById("btnDeselectAll").onclick=()=>{document.querySelectorAll('.game-cb').forEach(cb=>cb.checked=false);};
+document.getElementById("btnDelSel").onclick=async()=>{const checked=Array.from(document.querySelectorAll('.game-cb:checked')).map(cb=>cb.value);if(!checked.length||!confirm("Delete selected games?"))return;let local=JSON.parse(localStorage.getItem("chessReviewGames")||"[]");local=local.filter(g=>!checked.includes(g.id));localStorage.setItem("chessReviewGames",JSON.stringify(local));const db=await getDB();if(db){const tx=db.transaction("games","readwrite");checked.forEach(id=>tx.objectStore("games").delete(id));db.close();}await loadDataGames();localStorage.setItem("needsIndexRefresh","1");};
+function encryptData(obj){const str=unescape(encodeURIComponent(JSON.stringify(obj)));const key="12345";let res="";for(let i=0;i<str.length;i++)res+=String.fromCharCode(str.charCodeAt(i)^key.charCodeAt(i%key.length));return btoa(res);}
+function decryptData(b64){const str=atob(b64);const key="12345";let res="";for(let i=0;i<str.length;i++)res+=String.fromCharCode(str.charCodeAt(i)^key.charCodeAt(i%key.length));return JSON.parse(decodeURIComponent(escape(res)));}
+document.getElementById("btnExportDel").onclick=async()=>{const checked=Array.from(document.querySelectorAll('.game-cb:checked')).map(cb=>cb.value);if(!checked.length)return;const db=await getDB();let fullGames=[];if(db){const tx=db.transaction("games","readonly");const store=tx.objectStore("games");fullGames=await Promise.all(checked.map(id=>new Promise(r=>{const req=store.get(id);req.onsuccess=()=>r(req.result);req.onerror=()=>r(null);})));db.close();}fullGames=fullGames.filter(g=>g);if(!fullGames.length)return;const b64=encryptData(fullGames);const blob=new Blob([b64],{type:"application/octet-stream"});const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download=`chess_backup_${Date.now()}.crmcb`;a.click();let local=JSON.parse(localStorage.getItem("chessReviewGames")||"[]");local=local.filter(g=>!checked.includes(g.id));localStorage.setItem("chessReviewGames",JSON.stringify(local));const db2=await getDB();if(db2){const tx2=db2.transaction("games","readwrite");checked.forEach(id=>tx2.objectStore("games").delete(id));db2.close();}await loadDataGames();localStorage.setItem("needsIndexRefresh","1");};
+document.getElementById("btnImportData").onclick=()=>document.getElementById("importFile").click();
+document.getElementById("importFile").onchange=(e)=>{const file=e.target.files[0];if(!file)return;const reader=new FileReader();reader.onload=async(ev)=>{try{const games=decryptData(ev.target.result);if(!Array.isArray(games))throw new Error();let local=JSON.parse(localStorage.getItem("chessReviewGames")||"[]");const db=await getDB();let tx,store;if(db){tx=db.transaction("games","readwrite");store=tx.objectStore("games");}games.forEach(g=>{if(!local.find(x=>x.id===g.id)){local.unshift({id:g.id,white:g.white,black:g.black,playedAt:g.playedAt,result:g.result,moveCount:g.moveCount,status:g.status,opening:g.opening,tag:g.tag});}if(store)store.put(g);});if(db)db.close();localStorage.setItem("chessReviewGames",JSON.stringify(local));await loadDataGames();localStorage.setItem("needsIndexRefresh","1");alert("Import successful!");}catch(err){alert("Import failed. Invalid or corrupted file.");}e.target.value="";};reader.readAsText(file);};
+</script>
+<script src="debugger.js"></script>
+</body>
+</html>

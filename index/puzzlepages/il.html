@@ -1,0 +1,285 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Infinite Zen · Chess Review</title>
+<link rel="stylesheet" href="../styles.css">
+<style>
+    :root { --sq-light: #ebecd0; --sq-dark: #739552; --move-duration: 0.3s; }
+    body { padding: 10px; }
+    
+    .topbar { display: flex; align-items: center; justify-content: space-between; padding: 10px 16px; background: var(--panel); border-bottom: 1px solid var(--line); margin-bottom: 15px; border-radius: 8px;}
+    .topbar-center h1 { margin: 0; font-size: 16px; }
+    .icon-btn { background: transparent; border: none; color: #fff; font-size: 20px; cursor: pointer; text-decoration: none; padding: 0; }
+
+    #il-container { display: flex; flex-direction: column; width: 100%; max-width: 500px; margin: 0 auto; }
+    
+    .board-layout-wrapper { display: flex; align-items: center; justify-content: center; width: 100%; max-width: 500px; height: auto; max-height: 55vh; margin: 0 auto 15px auto; }
+    .chessboard-wrapper { width: 100%; height: 100%; aspect-ratio: 1/1; max-height: 55vh; max-width: 55vh; position: relative; border: 2px solid var(--line); border-radius: 6px; overflow: hidden; box-shadow: 0 4px 14px rgba(0,0,0,0.4); cursor: pointer; }
+    
+    .chessboard { display: grid; grid-template-columns: repeat(8, 1fr); grid-template-rows: repeat(8, 1fr); width: 100%; height: 100%; z-index: 1; position: relative;}
+    .square { position: relative; display: flex; align-items: center; justify-content: center; }
+    .square.light { background-color: var(--sq-light); }
+    .square.dark { background-color: var(--sq-dark); }
+    
+    .coord-rank { position: absolute; top: 2px; left: 3px; font-size: 10px; font-weight: 800; z-index: 2; pointer-events: none; }
+    .coord-file { position: absolute; bottom: 1px; right: 3px; font-size: 10px; font-weight: 800; z-index: 2; pointer-events: none; }
+    .light .coord-text { color: var(--sq-dark); opacity: 0.8;}
+    .dark .coord-text { color: var(--sq-light); opacity: 0.8;}
+
+    .highlight-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; opacity: 0.6; z-index: 1; display: none; }
+    .legal-dot { position: absolute; width: 32%; height: 32%; background: rgba(0,0,0,0.25); border-radius: 50%; z-index: 6; pointer-events: none; }
+    .piece-layer { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 5; }
+    .piece { position: absolute; width: 12.5%; height: 12.5%; background-size: 95%; background-repeat: no-repeat; background-position: center; transition: transform var(--move-duration) ease-in-out, opacity 0.2s ease; pointer-events: none; }
+    .badge-layer { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 10; }
+    .floating-badge { position: absolute; width: 22px; height: 22px; margin-top: -6px; margin-left: -6px; z-index: 10; background: transparent; filter: drop-shadow(0 2px 4px rgba(0,0,0,0.5)); transition: transform var(--move-duration) ease-in-out;}
+    
+    .c-best, .c-excellent { background-color: #84cc16; }
+    .c-brilliant { background-color: #1cb0a6; }
+    .c-miss { background-color: #ec4899; }
+    
+    .slider-wrapper { display: flex; align-items: center; background: var(--panel2); border: 1px solid var(--line); border-radius: 8px; padding: 4px; gap: 4px; margin-bottom: 15px;}
+    .move-slider { flex: 1; display: flex; overflow-x: auto; scroll-behavior: smooth; gap: 10px; padding: 6px; scrollbar-width: none; }
+    .move-slider::-webkit-scrollbar { display: none; }
+    .move-pair { display: flex; align-items: center; gap: 6px; background: #0c0a11; padding: 6px 10px; border-radius: 6px; border: 1px solid var(--line); flex-shrink: 0; }
+    .move-num { color: var(--muted); font-size: 12px; font-weight: bold; width: 18px; }
+    .move-ply { display: flex; align-items: center; gap: 4px; color: #fff; font-size: 13px; font-weight: bold; cursor: pointer; padding: 4px; border-radius: 4px; transition: background 0.2s; }
+    .move-ply:active, .move-ply.active { background: #332d42; color: var(--purple); }
+    .mc-icon { width: 14px; height: 14px; display: flex; align-items: center; justify-content: center; }
+
+    .action-btn { background: var(--panel2); border: 1px solid var(--line); padding: 14px; border-radius: 8px; color: #fff; cursor: pointer; text-align: center; font-size: 15px; transition: background 0.2s; font-weight: bold; flex: 1;}
+    .action-btn:active { background: var(--purple); border-color: var(--purple); }
+
+    .modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); display: flex; align-items: center; justify-content: center; z-index: 1000; }
+    .modal-box { background: var(--panel); border: 1px solid var(--line); padding: 22px; border-radius: 12px; width: 90%; max-width: 340px; text-align: center; max-height:85vh; overflow-y:auto; }
+    .spinner { width: 40px; height: 40px; border: 4px solid var(--line); border-top: 4px solid var(--purple); border-radius: 50%; animation: spin 1s linear infinite; margin: 0 auto 15px auto; }
+    @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+    .hidden { display: none !important; }
+</style>
+</head>
+<body>
+
+<div style="max-width: 500px; margin: 0 auto;">
+    <header class="topbar">
+        <a class="icon-btn" href="../puzzle.html" id="btnBack">←</a>
+        <div class="topbar-center"><h1>Infinite Zen</h1></div>
+        <div style="width:20px;"></div>
+    </header>
+</div>
+
+<div id="il-container">
+    <div style="text-align:center; padding:40px;">
+        <div class="spinner"></div>
+        <h3 style="color:var(--purple); margin:0;">Finding Peace...</h3>
+    </div>
+</div>
+
+<script src="../debugger.js"></script>
+<script src="pstore.js"></script>
+<script src="pbin.js"></script>
+
+<script src="../debugger.js"></script>
+<script src="pstore.js"></script>
+<script src="pbin.js"></script>
+
+<script type="module">
+import { PuzzleBoard } from './pboard.js';
+
+let ilState = {
+    completed: 0,
+    driftRating: 1500,
+    queue: [],
+    activePuzzle: null
+};
+
+let currentPuzzle = null;
+let sessionFirstPuzzle = true; 
+let hintState = 0; 
+
+document.addEventListener("DOMContentLoaded", async () => {
+    const savedState = await getDB("m9pda");
+    if(savedState) {
+        ilState.completed = savedState.completed || 0;
+        ilState.driftRating = savedState.driftRating || 1500;
+        ilState.queue = savedState.queue || [];
+        ilState.activePuzzle = savedState.activePuzzle || null;
+    }
+
+    await buildZenQueue();
+    loadNextZenPuzzle();
+});
+
+async function buildZenQueue() {
+    const meta = await getMeta();
+    const playedSet = await getDB("playedPuzzlesSet") || {};
+    
+    while(ilState.queue.length < 3) {
+        let r = Math.random();
+        let targetTier = r < 0.7 ? 2 : (r < 0.9 ? 3 : 1);
+        
+        let tName = "unclassified";
+        if (targetTier === 2 && Math.random() < 0.5) {
+            tName = THEMES[Math.floor(Math.random() * THEMES.length)];
+        }
+        
+        let minR = Math.max(1300, ilState.driftRating - 100);
+        let maxR = Math.min(3000, ilState.driftRating + 100);
+        
+        let candidate = null;
+        let attempts = 0;
+        
+        while(!candidate && attempts < 100) {
+            attempts++;
+            let tMeta = meta[tName]?.[`t${targetTier}`];
+            
+            if (tMeta && tMeta.total > 0) {
+                let validBrackets = [];
+                let sB = Math.floor(minR/100)*100;
+                let eB = Math.floor(maxR/100)*100;
+                for(let b=sB; b<=eB; b+=100) {
+                    if (tMeta.brackets[b]) validBrackets.push(tMeta.brackets[b]);
+                }
+                
+                if (validBrackets.length > 0) {
+                    const br = validBrackets[Math.floor(Math.random()*validBrackets.length)];
+                    const rIdx = Math.floor(Math.random() * (br[1] - br[0] + 1)) + br[0];
+                    const pKey = `${tName}_t${targetTier}_${rIdx}`;
+                    
+                    if (!playedSet[pKey] || attempts > 80) {
+                        try {
+                            let pData = await extractPuzzleData(tName, targetTier.toString(), rIdx);
+                            if (targetTier === 1 && pData.m.split(' ').length <= 4) continue; 
+                            if (pData.r >= minR && pData.r <= maxR) {
+                                candidate = pData;
+                                playedSet[pKey] = true;
+                            }
+                        } catch(e) {}
+                    }
+                }
+            } else {
+                tName = "unclassified"; 
+            }
+        }
+        
+        if (candidate) {
+            ilState.queue.push(candidate);
+            ilState.driftRating = candidate.r; 
+        } else {
+            ilState.driftRating = Math.floor((ilState.driftRating + 1500) / 2);
+        }
+    }
+    
+    await setDB("playedPuzzlesSet", playedSet);
+    await setDB("m9pda", ilState);
+}
+
+window.applyHint = async () => {
+    let ab = window.activeBoard;
+    if(!ab || ab.currentPly >= ab.solutionMoves.length) return;
+
+    let expected = ab.solutionMoves[ab.currentPly];
+    let fromSq = expected.substring(0, 2);
+
+    if(hintState === 0) {
+        // Step 1: Highlight the starting square
+        let hl = document.getElementById(`hl-${fromSq}`);
+        if(hl) {
+            hl.style.display = "block";
+            hl.style.backgroundColor = "rgba(234, 179, 8, 0.6)"; 
+        }
+        const btn = document.getElementById("btnHint");
+        if(btn) btn.innerText = "Show Move 💡";
+        hintState = 1;
+    } else if(hintState === 1) {
+        // Step 2: Draw the arrow and force the user to play it
+        ab.drawZenArrow(expected);
+        const btn = document.getElementById("btnHint");
+        if(btn) btn.disabled = true; // User must physically make the move
+    }
+};
+
+window.retryMove = () => {
+    window.activeBoard.undoLastMove();
+    hintState = 0;
+    
+    document.getElementById("action-container").innerHTML = `
+        <button id="btnHint" class="action-btn" onclick="window.applyHint()">Hint 💡</button>
+        <button class="action-btn" onclick="window.skipPuzzle()">Skip & Next ⏭️</button>
+    `;
+};
+
+window.skipPuzzle = async () => {
+    await logPuzzleResult(9, 2, currentPuzzle.t, currentPuzzle.tier, currentPuzzle.i, window.activeBoard.getElapsedTime());
+    window.advanceToNextPuzzle();
+};
+
+window.advanceToNextPuzzle = async () => {
+    ilState.activePuzzle = null; 
+    await setDB("m9pda", ilState);
+    loadNextZenPuzzle();
+};
+
+async function loadNextZenPuzzle() {
+    if (ilState.activePuzzle) {
+        currentPuzzle = ilState.activePuzzle;
+    } else {
+        if (ilState.queue.length < 3) await buildZenQueue();
+        currentPuzzle = ilState.queue.shift();
+        ilState.activePuzzle = currentPuzzle;
+        await setDB("m9pda", ilState);
+        buildZenQueue(); 
+    }
+
+    const themeStr = THEMES[currentPuzzle.t] || "Tactics";
+    const totalMoves = Math.ceil(currentPuzzle.m.split(' ').length / 2);
+    hintState = 0;
+
+    window.activeBoard = new PuzzleBoard("il-container", {
+        isFirstPuzzle: sessionFirstPuzzle,
+        themeHidden: true,
+        themeName: themeStr,
+        puzzleData: currentPuzzle,
+        blindLevel: 0,
+        topBar: { labelLeft: "Moves", valLeft: totalMoves, labelRight: "Status", valRight: "Solved: " + ilState.completed },
+        actions: [
+            { id: "btnHint", label: "Hint 💡", class: "action-btn", onClick: () => window.applyHint() },
+            { label: "Skip & Next ⏭️", class: "action-btn", onClick: () => window.skipPuzzle() }
+        ],
+        onComplete: async (timeMs) => {
+            ilState.completed++;
+            await setDB("m9pda", ilState);
+            await logPuzzleResult(9, 0, currentPuzzle.t, currentPuzzle.tier, currentPuzzle.i, timeMs);
+            
+            document.getElementById("action-container").innerHTML = `<button class="action-btn" style="background:var(--purple); border-color:var(--purple);" onclick="window.advanceToNextPuzzle()">Next Puzzle</button>`;
+        },
+        onFail: async (timeMs) => {
+            if(!currentPuzzle.hasFailed) {
+                currentPuzzle.hasFailed = true;
+                await logPuzzleResult(9, 1, currentPuzzle.t, currentPuzzle.tier, currentPuzzle.i, timeMs);
+            }
+            
+            document.getElementById("action-container").innerHTML = `
+                <button class="action-btn" onclick="window.activeBoard.playSolution()">Show Solution</button>
+                <button class="action-btn" style="background:var(--purple); border-color:var(--purple);" onclick="window.retryMove()">Retry ↩️</button>
+            `;
+        }
+    });
+
+    // Reset Hint UI if user manually clicks the board
+    document.getElementById("pb-board-area").addEventListener('click', () => {
+        if (hintState === 1) {
+            hintState = 0;
+            const btn = document.getElementById('btnHint');
+            if (btn) {
+                btn.innerText = 'Hint 💡';
+                btn.disabled = false;
+            }
+        }
+    });
+
+    sessionFirstPuzzle = false; 
+}
+</script>
+</body>
+</html>

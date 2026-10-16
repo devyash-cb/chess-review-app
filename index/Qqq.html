@@ -1,0 +1,176 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>Browser Storage Inspector</title>
+<style>
+:root{color-scheme:dark;--bg:#0b0d12;--panel:#131722;--panel2:#191f2d;--border:#2a3244;--text:#e8edf7;--muted:#9aa6bd;--accent:#9b87f5;--accent2:#7964df;--danger:#ff727f;--good:#69d6a4;--radius:14px}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:15px/1.45 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+header{padding:22px max(16px,calc((100% - 1200px)/2));border-bottom:1px solid var(--border);background:#10131b}
+h1{font-size:clamp(22px,4vw,30px);margin:0 0 5px}header p{margin:0;color:var(--muted)}
+main{max-width:1200px;margin:0 auto;padding:18px 16px 50px}.notice{background:#201d35;border:1px solid #41386d;color:#dcd6ff;padding:12px 14px;border-radius:12px;margin-bottom:16px}
+.tabs{display:flex;gap:8px;margin-bottom:14px}.tab,button{border:1px solid var(--border);border-radius:10px;background:var(--panel2);color:var(--text);padding:10px 13px;cursor:pointer;font:inherit}.tab.active,button.primary{background:var(--accent2);border-color:var(--accent2);color:white}.tab:focus-visible,button:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.toolbar{display:flex;gap:9px;flex-wrap:wrap;align-items:center;margin:12px 0}.toolbar input{flex:1;min-width:180px}
+input,textarea,select{width:100%;background:#0d111a;border:1px solid var(--border);border-radius:9px;color:var(--text);padding:10px;font:inherit}textarea{min-height:210px;resize:vertical;font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:13px}
+.layout{display:grid;grid-template-columns:minmax(230px,310px) minmax(0,1fr);gap:14px}.panel{background:var(--panel);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;min-width:0}.panel-head{padding:13px 15px;border-bottom:1px solid var(--border);font-weight:700;display:flex;justify-content:space-between;gap:10px;align-items:center}.list{padding:8px;max-height:62vh;overflow:auto}.item{width:100%;text-align:left;display:block;margin-bottom:6px;background:transparent;border-color:transparent;padding:10px;border-radius:9px;overflow-wrap:anywhere}.item:hover,.item.selected{background:var(--panel2);border-color:var(--border)}.item small{display:block;color:var(--muted);margin-top:3px}.editor{padding:15px}.editor label{display:block;font-weight:650;margin:13px 0 6px}.editor label:first-child{margin-top:0}.meta{color:var(--muted);font-size:13px;overflow-wrap:anywhere}.actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}.danger{color:var(--danger);border-color:#63303b}.status{min-height:22px;margin-top:10px;color:var(--good);font-size:13px}.status.error{color:var(--danger)}.empty{padding:22px;color:var(--muted);text-align:center}.hidden{display:none!important}.badge{font-size:11px;background:#252c3c;color:#cbd5e7;padding:3px 7px;border-radius:99px;white-space:nowrap}.row{display:grid;grid-template-columns:1fr 1fr;gap:10px}.hint{color:var(--muted);font-size:13px;margin-top:7px}.db-form{display:flex;gap:8px;align-items:center;width:100%}.db-form input{min-width:0}.subhead{font-weight:700;margin:0 0 8px}
+@media(max-width:760px){.layout{grid-template-columns:1fr}.list{max-height:34vh}.row{grid-template-columns:1fr}.editor{padding:12px}.panel-head{align-items:flex-start}}
+</style>
+</head>
+<body>
+<header><h1>Browser Storage Inspector</h1><p>Inspect, edit, and save localStorage and IndexedDB data for this website.</p></header>
+<main>
+<div class="notice"><strong>Important:</strong> this page can access storage only for the same website origin that opened it. Open it from your app's same localhost/HTTPS address—not as a separate file:// page. Editing storage can break your app; change only data you understand.</div>
+<div class="tabs" role="tablist"><button class="tab active" id="tabLocal" role="tab" aria-selected="true">localStorage</button><button class="tab" id="tabIDB" role="tab" aria-selected="false">IndexedDB</button></div>
+
+<section id="localSection">
+<div class="toolbar"><input id="localSearch" placeholder="Filter localStorage keys…" aria-label="Filter localStorage keys"><button id="refreshLocal">Refresh</button><button class="primary" id="newLocal">＋ New key</button></div>
+<div class="layout">
+<div class="panel"><div class="panel-head"><span>Keys</span><span class="badge" id="localCount">0</span></div><div class="list" id="localList"></div></div>
+<div class="panel"><div class="panel-head"><span>Value editor</span><span class="badge" id="localMode">No selection</span></div><div class="editor" id="localEditor"><div class="empty">Select a key to view or edit its value.</div></div></div>
+</div>
+</section>
+
+<section id="idbSection" class="hidden">
+<div class="toolbar"><button class="primary" id="refreshDBs">Scan databases</button><span class="meta" id="dbSupport"></span></div>
+<div class="panel" style="padding:14px;margin-bottom:14px">
+<p class="subhead">Open a database by name</p>
+<div class="db-form"><input id="dbNameInput" placeholder="Database name (e.g. ChessReviewDB)" aria-label="Database name"><button id="openDB">Open</button></div>
+<div class="hint">Automatic database listing requires browser support for indexedDB.databases(). If unavailable, enter your database name above.</div>
+</div>
+<div class="row" style="margin-bottom:14px">
+<div class="panel"><div class="panel-head"><span>Databases</span><span class="badge" id="dbCount">0</span></div><div class="list" id="dbList"></div></div>
+<div class="panel"><div class="panel-head"><span>Object stores</span><span class="badge" id="storeCount">0</span></div><div class="list" id="storeList"><div class="empty">Open a database first.</div></div></div>
+</div>
+<div class="toolbar"><input id="recordSearch" placeholder="Filter records by key or value…" aria-label="Filter records"><button id="refreshRecords">Refresh records</button><button class="primary" id="newRecord">＋ New record</button></div>
+<div class="layout">
+<div class="panel"><div class="panel-head"><span>Records</span><span class="badge" id="recordCount">0</span></div><div class="list" id="recordList"><div class="empty">Choose a database and object store.</div></div></div>
+<div class="panel"><div class="panel-head"><span>Record editor</span><span class="badge" id="recordMode">No selection</span></div><div class="editor" id="recordEditor"><div class="empty">Select a record to edit it.</div></div></div>
+</div>
+</section>
+</main>
+<script>
+(() => {
+'use strict';
+const $ = id => document.getElementById(id);
+let activeTab='local', selectedLocalKey=null, currentDB=null, currentDBName='', currentStoreName='', currentStore=null, records=[], selectedRecord=null, isNewLocal=false, isNewRecord=false;
+const esc = s => String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const jsonText = value => { try { return JSON.stringify(value,null,2); } catch { return String(value); } };
+const isPlainObject = v => v !== null && typeof v === 'object';
+function setStatus(id,msg,error=false){const el=$(id);el.textContent=msg;el.classList.toggle('error',error)}
+function switchTab(tab){activeTab=tab;const local=tab==='local';$('localSection').classList.toggle('hidden',!local);$('idbSection').classList.toggle('hidden',local);$('tabLocal').classList.toggle('active',local);$('tabIDB').classList.toggle('active',!local);$('tabLocal').setAttribute('aria-selected',String(local));$('tabIDB').setAttribute('aria-selected',String(!local));}
+$('tabLocal').onclick=()=>switchTab('local');$('tabIDB').onclick=()=>switchTab('idb');
+
+function refreshLocal(){
+ const list=$('localList'), q=$('localSearch').value.toLowerCase(), keys=[];
+ try{for(let i=0;i<localStorage.length;i++){const k=localStorage.key(i);if(k!==null)keys.push(k)}}catch(e){list.innerHTML='<div class="empty">Cannot read localStorage: '+esc(e.message)+'</div>';return}
+ keys.sort((a,b)=>a.localeCompare(b));$('localCount').textContent=keys.length;
+ const shown=keys.filter(k=>k.toLowerCase().includes(q));
+ list.innerHTML=shown.length?shown.map(k=>`<button class="item ${k===selectedLocalKey?'selected':''}" data-key="${esc(k)}">${esc(k)}<small>${localStorage.getItem(k).length.toLocaleString()} characters</small></button>`).join(''):'<div class="empty">No matching keys.</div>';
+ list.querySelectorAll('[data-key]').forEach(b=>b.onclick=()=>selectLocal(b.dataset.key));
+ if(selectedLocalKey!==null && !keys.includes(selectedLocalKey)){selectedLocalKey=null;$('localEditor').innerHTML='<div class="empty">Select a key to view or edit its value.</div>'}
+}
+function selectLocal(key){
+ selectedLocalKey=key;isNewLocal=false;const value=localStorage.getItem(key);
+ $('localMode').textContent='Existing key';$('localEditor').innerHTML=`
+ <label for="localKeyInput">Key</label><input id="localKeyInput" value="${esc(key)}">
+ <label for="localValueInput">Value <span class="meta">(plain text or JSON)</span></label><textarea id="localValueInput" spellcheck="false"></textarea>
+ <div class="hint">The value is stored exactly as text. If it contains JSON, keep valid JSON formatting if your app expects JSON.</div>
+ <div class="actions"><button class="primary" id="saveLocal">Save changes</button><button class="danger" id="deleteLocal">Delete key</button></div><div class="status" id="localStatus"></div>`;
+ $('localValueInput').value=value; $('saveLocal').onclick=saveLocal;$('deleteLocal').onclick=deleteLocal;refreshLocal();
+}
+function newLocal(){
+ isNewLocal=true;selectedLocalKey=null;$('localMode').textContent='New key';
+ $('localEditor').innerHTML=`<label for="localKeyInput">Key</label><input id="localKeyInput" placeholder="Enter a unique key">
+ <label for="localValueInput">Value <span class="meta">(plain text or JSON)</span></label><textarea id="localValueInput" spellcheck="false" placeholder='Example: {"enabled":true}'></textarea>
+ <div class="actions"><button class="primary" id="saveLocal">Create key</button><button id="cancelLocal">Cancel</button></div><div class="status" id="localStatus"></div>`;
+ $('saveLocal').onclick=saveLocal;$('cancelLocal').onclick=()=>{$('localEditor').innerHTML='<div class="empty">Select a key to view or edit its value.</div>';$('localMode').textContent='No selection';isNewLocal=false};
+}
+function saveLocal(){
+ const key=$('localKeyInput').value;if(!key){setStatus('localStatus','Key cannot be empty.',true);return}
+ try{if(!isNewLocal && key!==selectedLocalKey)localStorage.removeItem(selectedLocalKey);localStorage.setItem(key,$('localValueInput').value);selectedLocalKey=key;isNewLocal=false;refreshLocal();selectLocal(key);setStatus('localStatus','Saved successfully.')}catch(e){setStatus('localStatus','Save failed: '+e.message,true)}
+}
+function deleteLocal(){if(selectedLocalKey===null)return;if(!confirm('Delete localStorage key "'+selectedLocalKey+'"? This cannot be undone.'))return;localStorage.removeItem(selectedLocalKey);selectedLocalKey=null;refreshLocal();$('localEditor').innerHTML='<div class="empty">Key deleted. Select another key.</div>';$('localMode').textContent='No selection'}
+$('refreshLocal').onclick=refreshLocal;$('newLocal').onclick=newLocal;$('localSearch').oninput=refreshLocal;
+
+function requestDBNames(){
+ const list=$('dbList');
+ if(!indexedDB){list.innerHTML='<div class="empty">IndexedDB is not available in this browser context.</div>';return}
+ if(typeof indexedDB.databases!=='function'){$('dbSupport').textContent='Automatic listing unsupported; enter a name above.';list.innerHTML='<div class="empty">This browser cannot enumerate database names. Enter a database name above to open it.</div>';return}
+ $('dbSupport').textContent='Automatic listing available.';
+ indexedDB.databases().then(dbs=>{ $('dbCount').textContent=dbs.length;list.innerHTML=dbs.length?dbs.sort((a,b)=>(a.name||'').localeCompare(b.name||'')).map(d=>`<button class="item" data-db="${esc(d.name||'')}">${esc(d.name||'(unnamed database)')}<small>Version: ${esc(d.version??'unknown')}</small></button>`).join(''):'<div class="empty">No IndexedDB databases found for this origin.</div>';list.querySelectorAll('[data-db]').forEach(b=>b.onclick=()=>openDatabase(b.dataset.db)); }).catch(e=>{list.innerHTML='<div class="empty">Could not list databases: '+esc(e.message)+'</div>'})
+}
+function openDatabase(name){
+ if(!name.trim())return;
+ const req=indexedDB.open(name);
+ req.onupgradeneeded=()=>{ // Avoid creating a database accidentally if it does not exist.
+   const db=req.result;
+   if(db.objectStoreNames.length===0){db.close();indexedDB.deleteDatabase(name);currentDB=null;alert('That database did not exist, so the empty database creation was cancelled. Check the name and try again.')}
+ };
+ req.onsuccess=()=>{if(currentDB)currentDB.close();currentDB=req.result;currentDBName=name;$('dbNameInput').value=name;currentDB.onversionchange=()=>{currentDB.close();currentDB=null;alert('This database changed in another tab. Reopen it to continue.')};renderStores();requestDBNames()};
+ req.onerror=()=>alert('Could not open database: '+(req.error?.message||'unknown error'));
+}
+function renderStores(){
+ const names=Array.from(currentDB.objectStoreNames);$('storeCount').textContent=names.length;
+ $('storeList').innerHTML=names.length?names.map(n=>`<button class="item ${n===currentStoreName?'selected':''}" data-store="${esc(n)}">${esc(n)}<small>Object store</small></button>`).join(''):'<div class="empty">This database has no object stores.</div>';
+ $('storeList').querySelectorAll('[data-store]').forEach(b=>b.onclick=()=>chooseStore(b.dataset.store));
+ if(!names.includes(currentStoreName)){currentStoreName='';currentStore=null;records=[];$('recordList').innerHTML='<div class="empty">Choose an object store.</div>';$('recordEditor').innerHTML='<div class="empty">Select a record to edit it.</div>';$('recordCount').textContent='0'}
+}
+function chooseStore(name){currentStoreName=name;currentStore=null;selectedRecord=null;isNewRecord=false;renderStores();loadRecords()}
+function keyToText(key){return jsonText(key)}
+function loadRecords(){
+ if(!currentDB||!currentStoreName)return;
+ const tx=currentDB.transaction(currentStoreName,'readonly'), store=tx.objectStore(currentStoreName), req=store.openCursor();records=[];
+ req.onsuccess=()=>{const cursor=req.result;if(cursor){records.push({key:cursor.key,value:cursor.value});cursor.continue()}else{renderRecords()}};
+ req.onerror=()=>alert('Could not read records: '+(req.error?.message||'unknown error'));
+}
+function renderRecords(){
+ const q=$('recordSearch').value.toLowerCase();$('recordCount').textContent=records.length;
+ const filtered=records.filter(r=>(keyToText(r.key)+' '+jsonText(r.value)).toLowerCase().includes(q));
+ $('recordList').innerHTML=filtered.length?filtered.map((r,i)=>`<button class="item ${selectedRecord&&keyToText(selectedRecord.key)===keyToText(r.key)?'selected':''}" data-record="${i}"><span>${esc(keyToText(r.key))}</span><small>${esc(typeof r.value==='object'&&r.value!==null?Array.isArray(r.value)?'Array': 'Object':String(r.value).slice(0,100))}</small></button>`).join(''):'<div class="empty">No matching records.</div>';
+ $('recordList').querySelectorAll('[data-record]').forEach(b=>b.onclick=()=>selectRecord(filtered[Number(b.dataset.record)]));
+}
+function chooseEditorRecord(r,isNew=false){
+ selectedRecord=r;isNewRecord=isNew;$('recordMode').textContent=isNew?'New record':'Existing record';
+ const auto= currentStore?.autoIncrement ? 'This store uses an auto-incrementing key; you may leave the key blank for a new record.' : 'Use a valid JSON value for the key, e.g. "game-1", 12, or ["part",1].';
+ $('recordEditor').innerHTML=`
+ <label for="recordKeyInput">Primary key (JSON)</label><textarea id="recordKeyInput" style="min-height:76px" spellcheck="false" ${!isNew?'':'placeholder=\'"my-key"\''}></textarea>
+ <div class="hint">${esc(auto)}</div>
+ <label for="recordValueInput">Record value (JSON)</label><textarea id="recordValueInput" spellcheck="false"></textarea>
+ <div class="hint">The value must be valid JSON. IndexedDB supports additional types (such as Date, Blob, and ArrayBuffer); this editor is intended for JSON-compatible records.</div>
+ <div class="actions"><button class="primary" id="saveRecord">Save record</button><button class="danger" id="deleteRecord" ${isNew?'disabled':''}>Delete record</button><button id="cancelRecord">Cancel</button></div><div class="status" id="recordStatus"></div>`;
+ $('recordKeyInput').value=r?.key===undefined?'':jsonText(r.key);$('recordValueInput').value=r?.value===undefined?'{}':jsonText(r.value);
+ $('saveRecord').onclick=saveRecord;$('deleteRecord').onclick=deleteRecord;$('cancelRecord').onclick=()=>{$('recordEditor').innerHTML='<div class="empty">Select a record to edit it.</div>';$('recordMode').textContent='No selection';selectedRecord=null;isNewRecord=false};
+}
+function selectRecord(r){isNewRecord=false;currentStore=currentDB.transaction(currentStoreName,'readonly').objectStore(currentStoreName);chooseEditorRecord(r,false)}
+function newRecord(){if(!currentDB||!currentStoreName){alert('Open a database and choose an object store first.');return}currentStore=currentDB.transaction(currentStoreName,'readonly').objectStore(currentStoreName);chooseEditorRecord({key:undefined,value:{}},true)}
+function saveRecord(){
+ let key, value;
+ try{const kt=$('recordKeyInput').value.trim();key=kt===''?undefined:JSON.parse(kt);value=JSON.parse($('recordValueInput').value)}
+ catch(e){setStatus('recordStatus','Invalid JSON: '+e.message,true);return}
+ if(key===undefined&&!isNewRecord){setStatus('recordStatus','Primary key is required.',true);return}
+ if(key===undefined&&!currentStore.autoIncrement){setStatus('recordStatus','This store needs a primary key.',true);return}
+ const oldKey=selectedRecord?.key;
+ try{
+  const tx=currentDB.transaction(currentStoreName,'readwrite'), store=tx.objectStore(currentStoreName);
+  if(!isNewRecord && keyToText(oldKey)!==keyToText(key))store.delete(oldKey);
+  if(key===undefined)store.add(value);else store.put(value,key);
+  tx.oncomplete=()=>{setStatus('recordStatus','Saved successfully.');selectedRecord=null;isNewRecord=false;loadRecords();chooseEditorRecord({key:key,value:value},false)};
+  tx.onerror=()=>setStatus('recordStatus','Save failed: '+(tx.error?.message||'unknown error'),true);
+ }catch(e){setStatus('recordStatus','Save failed: '+e.message,true)}
+}
+function deleteRecord(){
+ if(isNewRecord||!selectedRecord)return;
+ if(!confirm('Delete this record from "'+currentStoreName+'"? This cannot be undone.'))return;
+ const tx=currentDB.transaction(currentStoreName,'readwrite');tx.objectStore(currentStoreName).delete(selectedRecord.key);
+ tx.oncomplete=()=>{selectedRecord=null;isNewRecord=false;$('recordEditor').innerHTML='<div class="empty">Record deleted.</div>';$('recordMode').textContent='No selection';loadRecords()};
+ tx.onerror=()=>setStatus('recordStatus','Delete failed: '+(tx.error?.message||'unknown error'),true)
+}
+$('refreshDBs').onclick=requestDBNames;$('openDB').onclick=()=>openDatabase($('dbNameInput').value);$('dbNameInput').addEventListener('keydown',e=>{if(e.key==='Enter')openDatabase(e.target.value)});$('refreshRecords').onclick=loadRecords;$('recordSearch').oninput=renderRecords;$('newRecord').onclick=newRecord;
+
+refreshLocal();requestDBNames();
+})();
+</script>
+</body>
+</html> 
