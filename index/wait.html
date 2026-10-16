@@ -65,8 +65,8 @@
 </div>
 <div id="devModal" class="modal-overlay hidden">
 <div class="modal-box">
-<h3 style="color:var(--purple)">Developer Mode</h3>
-<p class="muted" style="font-size:14px">Welcome Itz_yash8636. Enter a fixed depth for fast testing.</p>
+<h3 style="color:var(--purple)">Analysis Depth</h3>
+<p class="muted" style="font-size:14px">Choose a fixed depth for fast testing, or click Normal.</p>
 <input type="number" id="devDepthInput" value="12" min="1" max="24">
 <div class="row-actions"><button id="devSaveBtn" class="primary-btn" style="background:var(--purple);color:white;border:none">Set Depth</button><button id="devNormalBtn" class="ghost-btn" style="background:#332d42;color:white;border:none">Normal</button></div>
 </div>
@@ -254,21 +254,20 @@ document.addEventListener("DOMContentLoaded", async () => {
     
     if (game && game.moves && game.moves.length > 0) renderPieces(game.moves[0].fenBefore);
     
-    if ((appSettings.username || "").toLowerCase().trim() === "itz_yash8636") {
-        const dm = document.getElementById("devModal");
-        dm.classList.remove("hidden");
-        document.getElementById("devSaveBtn").onclick = () => {
-            devFixedDepth = parseInt(document.getElementById("devDepthInput").value);
-            dm.classList.add("hidden");
-            startPipelines();
-        };
-        document.getElementById("devNormalBtn").onclick = () => {
-            dm.classList.add("hidden");
-            startPipelines();
-        };
-    } else {
+    // Always prompt for analysis depth on startup
+    const dm = document.getElementById("devModal");
+    dm.classList.remove("hidden");
+    
+    document.getElementById("devSaveBtn").onclick = () => {
+        devFixedDepth = parseInt(document.getElementById("devDepthInput").value);
+        dm.classList.add("hidden");
         startPipelines();
-    }
+    };
+    
+    document.getElementById("devNormalBtn").onclick = () => {
+        dm.classList.add("hidden");
+        startPipelines();
+    };
 });
 
 function syncSettingsToModal() {
@@ -437,11 +436,8 @@ function identifyOpening(mP) {
 async function runVisualLoop() {
     let fS = 0;
     const pB = document.getElementById("visualProgressBar");
-    
-    // Target plies to wait for before announcing opening (10 plies = 5 moves)
     const tP = Math.min(10, game.moves.length);
     
-    // Cycle facts until the engine finishes calculating the target plies
     while (true) {
         if (analysisIndex >= tP || isEngineComplete) break;
         
