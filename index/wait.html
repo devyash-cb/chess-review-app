@@ -86,8 +86,8 @@ window.addEventListener("error",(e)=>trace(`Global Error: ${e.message} at ${e.fi
 window.addEventListener("unhandledrejection",(e)=>trace(`Unhandled Promise: ${e.reason}`,true));
 let game=null,commentsDB=null,bookBuffer=null,pieceSetDB=null,normalizedEcoDB={};
 let isMuted=false,isEngineComplete=false,devFixedDepth=null;
-const isMulti=typeof SharedArrayBuffer!=='undefined'&&typeof window!=='undefined'&&window.crossOriginIsolated;
-let maxThreads=isMulti?(navigator.hardwareConcurrency||2):1;
+
+let maxThreads=(navigator.hardwareConcurrency||2);
 let baseDepth=maxThreads>=8?20:(maxThreads>=4?16:12);
 let analysisIndex=0,visualIndex=0,currentUtterance=null,isUserPerspective=false;
 let appSettings={username:"",ttsVoiceEnabled:true,moveSpeed:0.4,readingDuration:3,speechRate:1.0,wHexCode:"#ebecd0",bHexCode:"#739552",activePieceSet:"Piece-set-1"};
@@ -128,9 +128,16 @@ function bindSettingsSliders(){document.getElementById("cfgMoveSpeed").oninput=(
 function startPipelines(){runBackgroundAnalysis();runVisualLoop();}
 function winPercent(cp){return 100/(1+Math.exp(-0.00368208*cp*100));}
 async function runBackgroundAnalysis(){
-sysLog("Wait Page Init",{isMulti,maxThreads,baseDepth});
+sysLog("Wait Page Init",{maxThreads,baseDepth});
 let engine;
-try{engine=new Worker(isMulti?'stockfish/stockfish.js':'stockfish/stockfish-19-lite-single.js');engine.onerror=(e)=>sysLog(`Engine Error: ${e.message}`);}catch(e){try{engine=new Worker('stockfish/stockfish-19-lite-single.js');maxThreads=1;sysLog("Worker Fallback",{maxThreads:1});}catch(err){return;}}
+try {
+    engine = new Worker('stockfish/stockfish.js');
+    engine.onerror = (e) => sysLog("Engine Error", { error: e.message });
+} catch (e) {
+    sysLog("Fatal Engine Error: Could not load multithreaded engine", { error: e.message });
+    return;
+}
+
 engine.postMessage("uci");engine.postMessage("setoption name Hash value 256");engine.postMessage(`setoption name Threads value ${maxThreads}`);engine.postMessage("setoption name MultiPV value 2");engine.postMessage("isready");
 for(let i=analysisIndex;i<game.moves.length;i++){
 let m=game.moves[i];let f=m.fenBefore;let t=devFixedDepth||baseDepth;
@@ -142,15 +149,17 @@ const res=await evaluatePosition(engine,f,t);
 m.eval=res.eval;m.winPercent=winPercent(res.eval);m.best1=res.best1;m.followup1=res.pv1;m.best1Eval=res.eval;m.best1WinPct=winPercent(res.eval);m.best2=res.best2;m.followup2=res.pv2;m.best2Eval=res.eval2;m.best2WinPct=winPercent(res.eval2);m.targetDepth=t;
 }
 analysisIndex=i+1;await saveGameToDB(game);
+sysLog("Move analysis complete", { moveIndex: i, moveNum: m.moveNum, uci: m.uci, depth: t });
 }
 game.status="partially completed";await saveGameToDB(game);isEngineComplete=true;
+sysLog("Engine analysis fully complete", { totalMovesAnalysed: game.moves.length });
 }
 function evaluatePosition(eg,f,d){
 return new Promise((r)=>{
 let bP1="",bP2="",bE=0,b2E=0;
 eg.onmessage=(e)=>{
 const l=e.data;const i1=l.includes(" multipv 1 ");const i2=l.includes(" multipv 2 ");
-if(i1&&l.includes(" pv "))bP1=l.match(/\bpv (.+)$/)?.[1]||bP1;if(i2&&l.includes(" pv "))bP2=l.match(/\bpv (.+)$/)?.[1]||bP2;
+if(i1&&l.includes(" pv "))bP1=l.match(/\bpv (.+)$/)?.[1]\vert{}\vert{}bP1;if(i2&&l.includes(" pv "))bP2=l.match(/\bpv (.+)$/)?.[1]||bP2;
 if(i1){if(l.includes("score cp "))bE=parseInt(l.match(/\bscore cp (-?\d+)/)[1])/100;if(l.includes("score mate "))bE=parseInt(l.match(/\bscore mate (-?\d+)/)[1])>0?100:-100;}
 if(i2){if(l.includes("score cp "))b2E=parseInt(l.match(/\bscore cp (-?\d+)/)[1])/100;if(l.includes("score mate "))b2E=parseInt(l.match(/\bscore mate (-?\d+)/)[1])>0?100:-100;}
 if(l.startsWith("bestmove")){if(f.split(' ')[1]==='b'){bE=-bE;b2E=-b2E;}const b1=bP1?bP1.split(" ")[0]:null;const b2=bP2?bP2.split(" ")[0]:null;r({eval:Number(bE.toFixed(2)),eval2:Number(b2E.toFixed(2)),pv1:bP1.trim(),pv2:bP2.trim(),best1:b1,best2:b2});}
