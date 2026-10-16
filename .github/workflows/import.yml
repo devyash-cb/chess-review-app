@@ -6,18 +6,20 @@ on:
 jobs:
   build-and-extract:
     runs-on: ubuntu-latest
+    
+    # Required permission to allow the bot to push files to your repository
+    permissions:
+      contents: write
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
       - name: Install gdown
-        # pipx is the safest way to install Python CLI tools on modern Ubuntu runners
         run: pipx install gdown
 
       - name: Download Zip file from Google Drive
         run: |
-          # gdown automatically handles the Google Drive virus scan prompt
           gdown "https://drive.google.com/uc?id=1wVfsM3JIUw8NEN4OczAC7v3cV48iz7B0" -O archive.zip
 
       - name: Create index folder and Unzip
@@ -26,7 +28,18 @@ jobs:
           unzip archive.zip -d index/
           rm archive.zip
 
-      - name: Verify extracted contents
+      - name: Commit and Push to Repository
         run: |
-          echo "Listing contents of the index folder:"
-          ls -la index/
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          
+          # Stage the new folder
+          git add index/
+          
+          # Only commit and push if there are new files to avoid workflow errors
+          if ! git diff --staged --quiet; then
+            git commit -m "Add extracted files from Google Drive"
+            git push
+          else
+            echo "No new files to commit."
+          fi
