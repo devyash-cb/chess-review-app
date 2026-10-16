@@ -1,0 +1,124 @@
+name: Build Android APK
+
+on:
+  # Allows you to run this workflow manually from the Actions tab
+  workflow_dispatch: 
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'zulu'
+          java-version: '21'
+
+      - name: Download and Unzip Web Files from Drive
+        run: |
+          # Use pipx instead of pip to avoid PEP 668 environment errors on ubuntu-latest
+          pipx install gdown
+          gdown "1wVfsM3JIUw8NEN4OczAC7v3cV48iz7B0" -O archive.zip
+          
+          # Extract to a temporary directory first
+          mkdir -p temp_extract
+          unzip archive.zip -d temp_extract
+          rm archive.zip
+          
+          # Create the final Capacitor web directory
+          mkdir -p www
+          
+          # Check if the zip created a nested 'index' folder. 
+          # If yes, move its contents out so index.html sits exactly at www/index.html
+          if [ -d "temp_extract/index" ]; then
+            echo "Nested 'index' folder found. Moving contents to root of www..."
+            cp -a temp_extract/index/. www/
+          else
+            echo "No nested folder found. Moving files directly to www..."
+            cp -a temp_extract/. www/
+          fi
+          
+          # Clean up temporary folder
+          rm -rf temp_extract
+
+      - name: Install and Initialize Capacitor
+        run: |
+          npm init -y
+          npm install @capacitor/core @capacitor/android
+          npm install -D @capacitor/cli
+          
+          npx cap init "My Chess App" com.example.chessapp --web-dir www
+          npx cap add android
+
+      - name: Inject COOP/COEP Headers for SharedArrayBuffer
+        run: |
+          FILE_PATH=$(find android/app/src/main/java -name "MainActivity.java")
+          PKG_LINE=$(head -n 1 $FILE_PATH)
+          
+          cat << EOF > $FILE_PATH
+          $PKG_LINE
+
+          import android.os.Bundle;
+          import android.webkit.WebResourceRequest;
+          import android.webkit.WebResourceResponse;
+          import android.webkit.WebView;
+          import com.getcapacitor.BridgeActivity;
+          import com.getcapacitor.BridgeWebViewClient;
+          import java.util.HashMap;
+          import java.util.Map;
+
+          public class MainActivity extends BridgeActivity {
+              @Override
+              public void onStart() {
+                  super.onStart();
+                  WebView webView = this.bridge.getWebView();
+                  webView.setWebViewClient(new BridgeWebViewClient(this.bridge) {
+                      @Override
+                      public WebResourceResponse shouldInterceptRequest(WebView view, WebResourceRequest request) {
+                          WebResourceResponse response = super.shouldInterceptRequest(view, request);
+                          if (response != null) {
+                              Map<String, String> headers = response.getResponseHeaders();
+                              headers = (headers == null) ? new HashMap<>() : new HashMap<>(headers);
+                              headers.put("Cross-Origin-Opener-Policy", "same-origin");
+                              headers.put("Cross-Origin-Embedder-Policy", "require-corp");
+                              response.setResponseHeaders(headers);
+                          }
+                          return response;
+                      }
+                  });
+              }
+          }
+          EOF
+
+      - name: Fix Kotlin Duplicate Class Error
+        run: |
+          cat << 'EOF' >> android/build.gradle
+          
+          allprojects {
+              configurations.all {
+                  resolutionStrategy {
+                      exclude group: 'org.jetbrains.kotlin', module: 'kotlin-stdlib-jdk7'
+                      exclude group: 'org.jetbrains.kotlin', module: 'kotlin-stdlib-jdk8'
+                  }
+              }
+          }
+          EOF
+
+      - name: Build Android APK
+        run: |
+          cd android
+          ./gradlew assembleDebug
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-debug
+          path: android/app/build/outputs/apk/debug/app-debug.apk
