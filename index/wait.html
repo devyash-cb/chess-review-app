@@ -78,107 +78,506 @@
 <div class="row-actions"><button id="confirmBackBtn" class="primary-btn" style="background:var(--red);color:white;border:none">Stop & Leave</button><button id="cancelBackBtn" class="ghost-btn" style="background:#332d42;color:white;border:none">Continue</button></div>
 </div>
 </div>
+
 <script type="module">
-import{Chess}from'./chess.js';import{getBookMoves}from'./polyglot-book.js';
-function trace(m,isE=false){const t=isE?"ERROR":"TRACE";try{let l=JSON.parse(localStorage.getItem("chessReviewErrorLogs")||"[]");l.unshift({time:new Date().toLocaleTimeString(),type:t,msg:m});if(l.length>100)l.pop();localStorage.setItem("chessReviewErrorLogs",JSON.stringify(l));}catch(e){}}
-function sysLog(s,d={}){try{let l=JSON.parse(localStorage.getItem("chessEngineLogs")||"[]");l.push({time:new Date().toLocaleTimeString(),step:s,...d});if(l.length>150)l.shift();localStorage.setItem("chessEngineLogs",JSON.stringify(l));}catch(e){}}
-window.addEventListener("error",(e)=>trace(`Global Error: ${e.message} at ${e.filename}:${e.lineno}`,true));
-window.addEventListener("unhandledrejection",(e)=>trace(`Unhandled Promise: ${e.reason}`,true));
-let game=null,commentsDB=null,bookBuffer=null,pieceSetDB=null,normalizedEcoDB={};
-let isMuted=false,isEngineComplete=false,devFixedDepth=null;
+import { Chess } from './chess.js';
+import { getBookMoves } from './polyglot-book.js';
 
-let maxThreads=(navigator.hardwareConcurrency||2);
-let baseDepth=maxThreads>=8?20:(maxThreads>=4?16:12);
-let analysisIndex=0,visualIndex=0,currentUtterance=null,isUserPerspective=false;
-let appSettings={username:"",ttsVoiceEnabled:true,moveSpeed:0.4,readingDuration:3,speechRate:1.0,wHexCode:"#ebecd0",bHexCode:"#739552",activePieceSet:"Piece-set-1"};
-function loadSettings(){try{const s=JSON.parse(localStorage.getItem("chessReviewSettings")||"{}");appSettings={...appSettings,...s};}catch(e){}document.documentElement.style.setProperty('--sq-light',appSettings.wHexCode||'#ebecd0');document.documentElement.style.setProperty('--sq-dark',appSettings.bHexCode||'#739552');document.documentElement.style.setProperty('--move-duration',`${appSettings.moveSpeed}s`);isMuted=!appSettings.ttsVoiceEnabled;updateMuteIcon();}
-function saveSettings(){try{localStorage.setItem("chessReviewSettings",JSON.stringify(appSettings));}catch(e){}}
-function updateMuteIcon(){document.getElementById("muteIcon").src=isMuted?"pieces/mute.png":"pieces/unmute.png";}
-document.addEventListener("DOMContentLoaded",async()=>{
-loadSettings();
-const bm=document.getElementById('backModal'),sm=document.getElementById('settingsModal');
-try{if(window.Capacitor&&window.Capacitor.Plugins&&window.Capacitor.Plugins.App){window.Capacitor.Plugins.App.addListener('backButton',()=>{if(!sm.classList.contains("hidden"))sm.classList.add("hidden");else if(!document.getElementById("devModal").classList.contains("hidden"))document.getElementById("devModal").classList.add("hidden");else bm.classList.remove('hidden');});}}catch(e){}
-document.getElementById("uiBackBtn").onclick=(e)=>{e.preventDefault();bm.classList.remove('hidden');};
-document.getElementById("cancelBackBtn").onclick=()=>bm.classList.add('hidden');
-document.getElementById("confirmBackBtn").onclick=()=>window.location.href="home.html";
-document.getElementById("uiSettingsBtn").onclick=()=>{syncSettingsToModal();sm.classList.remove('hidden');};
-document.getElementById("closeSettingsBtn").onclick=()=>{commitSettingsFromModal();sm.classList.add('hidden');};
-document.getElementById("muteBtn").onclick=()=>{isMuted=!isMuted;appSettings.ttsVoiceEnabled=!isMuted;saveSettings();updateMuteIcon();if(isMuted&&window.speechSynthesis)window.speechSynthesis.cancel();};
-bindSettingsSliders();
-const p=new URLSearchParams(location.search);const gId=p.get("gameId");if(!gId)return alert("No game ID provided.");
-try{
-let loc=JSON.parse(localStorage.getItem("chessReviewGames")||"[]");
-const i=loc.findIndex(g=>g.id===gId);
-if(i!==-1){game=loc[i];await saveGameToDB(game);loc.splice(i,1);localStorage.setItem("chessReviewGames",JSON.stringify(loc));}
-else{game=await new Promise((r)=>{const req=indexedDB.open("ChessReviewDB",3);req.onsuccess=()=>{const db=req.result;if(!db.objectStoreNames.contains("games"))return r(null);const gr=db.transaction("games","readonly").objectStore("games").get(gId);gr.onsuccess=()=>r(gr.result);gr.onerror=()=>r(null);};req.onerror=()=>r(null);});}
-if(!game)return alert("Game not found.");
-if(!game.moves&&game.pgn){const t=new Chess();t.loadPgn(game.pgn);const h=t.history({verbose:true});const rc=new Chess();game.moves=[];for(let m of h){let fb=rc.fen();rc.move(m.san);game.moves.push({san:m.san,uci:m.from+m.to+(m.promotion||''),from:m.from,to:m.to,fenBefore:fb,fenAfter:rc.fen()});}await saveGameToDB(game);}
-analysisIndex=game.moves.findIndex(m=>m.eval===undefined);if(analysisIndex===-1)analysisIndex=game.moves.length;
-const u=(appSettings.username||"").toLowerCase().trim();const wP=(game.white||"").toLowerCase().trim();const bP=(game.black||"").toLowerCase().trim();
-isUserPerspective=(u!==""&&(u===wP||u===bP));
-}catch(e){}
-createBoardGrid();
-try{const[c,b,ea,eb,ps]=await Promise.all([fetch('comments.json').catch(()=>null),fetch('book.bin').catch(()=>null),fetch('ecoA.json').catch(()=>null),fetch('ecoB.json').catch(()=>null),fetch('pieces.json').catch(()=>null)]);if(c&&c.ok)commentsDB=await c.json();if(b&&b.ok)bookBuffer=await b.arrayBuffer();if(ps&&ps.ok)pieceSetDB=await ps.json();let re={};if(ea&&ea.ok)Object.assign(re,await ea.json());if(eb&&eb.ok)Object.assign(re,await eb.json());for(let k in re){const bf=k.split(" ").slice(0,4).join(" ");normalizedEcoDB[bf]=re[k].name;}}catch(e){trace(e.message,true);}
-if(game&&game.moves&&game.moves.length>0)renderPieces(game.moves[0].fenBefore);
-if((appSettings.username||"").toLowerCase().trim()==="itz_yash8636"){const dm=document.getElementById("devModal");dm.classList.remove("hidden");document.getElementById("devSaveBtn").onclick=()=>{devFixedDepth=parseInt(document.getElementById("devDepthInput").value);dm.classList.add("hidden");startPipelines();};document.getElementById("devNormalBtn").onclick=()=>{dm.classList.add("hidden");startPipelines();};}else{startPipelines();}
-});
-function syncSettingsToModal(){document.getElementById("cfgVoiceEnabled").checked=appSettings.ttsVoiceEnabled;document.getElementById("cfgMoveSpeed").value=appSettings.moveSpeed;document.getElementById("valMoveSpeed").textContent=`${appSettings.moveSpeed}s`;document.getElementById("cfgReadingTime").value=appSettings.readingDuration;document.getElementById("valReadingTime").textContent=`${appSettings.readingDuration}s`;document.getElementById("cfgSpeechRate").value=appSettings.speechRate;document.getElementById("valSpeechRate").textContent=`${appSettings.speechRate}x`;}
-function commitSettingsFromModal(){appSettings.ttsVoiceEnabled=document.getElementById("cfgVoiceEnabled").checked;appSettings.moveSpeed=parseFloat(document.getElementById("cfgMoveSpeed").value);appSettings.readingDuration=parseInt(document.getElementById("cfgReadingTime").value);appSettings.speechRate=parseFloat(document.getElementById("cfgSpeechRate").value);isMuted=!appSettings.ttsVoiceEnabled;updateMuteIcon();document.documentElement.style.setProperty('--move-duration',`${appSettings.moveSpeed}s`);saveSettings();}
-function bindSettingsSliders(){document.getElementById("cfgMoveSpeed").oninput=(e)=>document.getElementById("valMoveSpeed").textContent=`${e.target.value}s`;document.getElementById("cfgReadingTime").oninput=(e)=>document.getElementById("valReadingTime").textContent=`${e.target.value}s`;document.getElementById("cfgSpeechRate").oninput=(e)=>document.getElementById("valSpeechRate").textContent=`${e.target.value}x`;}
-function startPipelines(){runBackgroundAnalysis();runVisualLoop();}
-function winPercent(cp){return 100/(1+Math.exp(-0.00368208*cp*100));}
-async function runBackgroundAnalysis(){
-sysLog("Wait Page Init",{maxThreads,baseDepth});
-let engine;
-try {
-    engine = new Worker('stockfish/stockfish.js');
-    engine.onerror = (e) => sysLog("Engine Error", { error: e.message });
-} catch (e) {
-    sysLog("Fatal Engine Error: Could not load multithreaded engine", { error: e.message });
-    return;
+function trace(m, isE = false) {
+    const t = isE ? "ERROR" : "TRACE";
+    try {
+        let l = JSON.parse(localStorage.getItem("chessReviewErrorLogs") || "[]");
+        l.unshift({ time: new Date().toLocaleTimeString(), type: t, msg: m });
+        if (l.length > 100) l.pop();
+        localStorage.setItem("chessReviewErrorLogs", JSON.stringify(l));
+    } catch (e) {}
 }
 
-engine.postMessage("uci");engine.postMessage("setoption name Hash value 256");engine.postMessage(`setoption name Threads value ${maxThreads}`);engine.postMessage("setoption name MultiPV value 2");engine.postMessage("isready");
-for(let i=analysisIndex;i<game.moves.length;i++){
-let m=game.moves[i];let f=m.fenBefore;let t=devFixedDepth||baseDepth;
-if(!devFixedDepth){const pC=(f.match(/[a-zA-Z]/g)||[]).filter(c=>c.toLowerCase()!=='p').length;if(pC<=6&&t>12)t-=2;}
-m.ply=i+1;m.moveNum=Math.ceil((i+1)/2);
-let iB=await checkLocalBookBin(f,m.uci);
-if(iB){m.eval=0;m.classification="book";}else{
-const res=await evaluatePosition(engine,f,t);
-m.eval=res.eval;m.winPercent=winPercent(res.eval);m.best1=res.best1;m.followup1=res.pv1;m.best1Eval=res.eval;m.best1WinPct=winPercent(res.eval);m.best2=res.best2;m.followup2=res.pv2;m.best2Eval=res.eval2;m.best2WinPct=winPercent(res.eval2);m.targetDepth=t;
+function sysLog(s, d = {}) {
+    try {
+        let l = JSON.parse(localStorage.getItem("chessEngineLogs") || "[]");
+        l.push({ time: new Date().toLocaleTimeString(), step: s, ...d });
+        if (l.length > 150) l.shift();
+        localStorage.setItem("chessEngineLogs", JSON.stringify(l));
+    } catch (e) {}
 }
-analysisIndex=i+1;await saveGameToDB(game);
-sysLog("Move analysis complete", { moveIndex: i, moveNum: m.moveNum, uci: m.uci, depth: t });
-}
-game.status="partially completed";await saveGameToDB(game);isEngineComplete=true;
-sysLog("Engine analysis fully complete", { totalMovesAnalysed: game.moves.length });
-}
-function evaluatePosition(eg,f,d){
-return new Promise((r)=>{
-let bP1="",bP2="",bE=0,b2E=0;
-eg.onmessage=(e)=>{
-const l=e.data;const i1=l.includes(" multipv 1 ");const i2=l.includes(" multipv 2 ");
-if(i1&&l.includes(" pv "))bP1=l.match(/\bpv (.+)$/)?.[1]\vert{}\vert{}bP1;if(i2&&l.includes(" pv "))bP2=l.match(/\bpv (.+)$/)?.[1]||bP2;
-if(i1){if(l.includes("score cp "))bE=parseInt(l.match(/\bscore cp (-?\d+)/)[1])/100;if(l.includes("score mate "))bE=parseInt(l.match(/\bscore mate (-?\d+)/)[1])>0?100:-100;}
-if(i2){if(l.includes("score cp "))b2E=parseInt(l.match(/\bscore cp (-?\d+)/)[1])/100;if(l.includes("score mate "))b2E=parseInt(l.match(/\bscore mate (-?\d+)/)[1])>0?100:-100;}
-if(l.startsWith("bestmove")){if(f.split(' ')[1]==='b'){bE=-bE;b2E=-b2E;}const b1=bP1?bP1.split(" ")[0]:null;const b2=bP2?bP2.split(" ")[0]:null;r({eval:Number(bE.toFixed(2)),eval2:Number(b2E.toFixed(2)),pv1:bP1.trim(),pv2:bP2.trim(),best1:b1,best2:b2});}
+
+window.addEventListener("error", (e) => trace("Global Error: " + e.message + " at " + e.filename + ":" + e.lineno, true));
+window.addEventListener("unhandledrejection", (e) => trace("Unhandled Promise: " + e.reason, true));
+
+let game = null, commentsDB = null, bookBuffer = null, pieceSetDB = null, normalizedEcoDB = {};
+let isMuted = false, isEngineComplete = false, devFixedDepth = null;
+
+let maxThreads = (navigator.hardwareConcurrency || 2);
+let baseDepth = maxThreads >= 8 ? 20 : (maxThreads >= 4 ? 16 : 12);
+let analysisIndex = 0, visualIndex = 0, currentUtterance = null, isUserPerspective = false;
+
+let appSettings = {
+    username: "", ttsVoiceEnabled: true, moveSpeed: 0.4, readingDuration: 3, 
+    speechRate: 1.0, wHexCode: "#ebecd0", bHexCode: "#739552", activePieceSet: "Piece-set-1"
 };
-eg.postMessage("stop");eg.postMessage(`position fen ${f}`);eg.postMessage(`go depth ${d}`);
-});
+
+function loadSettings() {
+    try {
+        const s = JSON.parse(localStorage.getItem("chessReviewSettings") || "{}");
+        appSettings = { ...appSettings, ...s };
+    } catch (e) {}
+    document.documentElement.style.setProperty('--sq-light', appSettings.wHexCode || '#ebecd0');
+    document.documentElement.style.setProperty('--sq-dark', appSettings.bHexCode || '#739552');
+    document.documentElement.style.setProperty('--move-duration', appSettings.moveSpeed + "s");
+    isMuted = !appSettings.ttsVoiceEnabled;
+    updateMuteIcon();
 }
-async function saveGameToDB(gO){return new Promise((r)=>{try{const req=indexedDB.open("ChessReviewDB",3);req.onsuccess=()=>{const db=req.result;if(!db.objectStoreNames.contains("games"))return r();const tx=db.transaction("games","readwrite");tx.objectStore("games").put(gO);tx.oncomplete=()=>{db.close();r();};tx.onerror=()=>r();};req.onerror=()=>r();}catch(e){r();}});}
-function identifyOpening(mP){if(Object.keys(normalizedEcoDB).length===0)return"Unidentified Opening";for(let i=mP-1;i>=0;i--){const f=game.moves[i].fenAfter;const bF=f.split(" ").slice(0,4).join(" ");if(normalizedEcoDB[bF])return normalizedEcoDB[bF];}return"Unidentified Opening";}
-async function runVisualLoop(){const sT=Date.now();let fS=0;const pB=document.getElementById("visualProgressBar");const tP=Math.max(1,Math.floor(game.moves.length*0.30));while(true){let e=(Date.now()-sT)/1000;if(e>=10||analysisIndex>=tP)break;if(commentsDB&&commentsDB.idle_facts){const f=commentsDB.idle_facts[fS%commentsDB.idle_facts.length];updateCoach(f);await smartSpeak(f,3000);fS++;}else{await sleep(1000);}}const iO=identifyOpening(Math.min(10,game.moves.length));const gP=isUserPerspective?(commentsDB?.greetings?.own_game||["Let's review."]):(commentsDB?.greetings?.other_game||["Let's review."]);const gr=gP[Math.floor(Math.random()*gP.length)];const oI=iO!=="Unidentified Opening"?`${gr} You played the ${iO}.`:`${gr} Let's dive into the opening.`;updateCoach(oI);await smartSpeak(oI,appSettings.readingDuration*1000);while(visualIndex<game.moves.length){while(analysisIndex<=visualIndex&&!isEngineComplete){updateCoach("Calculating next move...",true);await sleep(200);}const m=game.moves[visualIndex];renderPieces(m.fenAfter);pB.style.width=`${((visualIndex+1)/game.moves.length)*100}%`;let c=buildMoveReaction(m,visualIndex);updateCoach(c);await smartSpeak(c,appSettings.readingDuration*1000);visualIndex++;if(isEngineComplete){if(window.speechSynthesis)window.speechSynthesis.cancel();isMuted=true;document.documentElement.style.setProperty('--move-duration','0.05s');while(visualIndex<game.moves.length){const fM=game.moves[visualIndex];renderPieces(fM.fenAfter);pB.style.width=`${((visualIndex+1)/game.moves.length)*100}%`;await sleep(50);visualIndex++;}break;}}updateCoach("Calculations complete! Redirecting to report...");game.opening=identifyOpening(game.moves.length);await saveGameToDB(game);await sleep(600);window.location.href=`analysis.html?gameId=${game.id}`;}
-function buildMoveReaction(m,p){if(!commentsDB)return`Move ${Math.ceil((p+1)/2)}: ${m.san}`;const pr=isUserPerspective?commentsDB.reactions.user:commentsDB.reactions.other;if(m.classification==="book")return`Move ${Math.ceil((p+1)/2)}: ${m.san} is a recognized book move.`;if(p>0){const pE=game.moves[p-1].eval||0;const cE=m.eval||0;const iW=(p%2===0);const eL=iW?(pE-cE):(cE-pE);const bM=m.best1||"a better continuation";if(eL>=2.0)return(pr.eval_drop_major||pr.blundered_material)[Math.floor(Math.random()*(pr.eval_drop_major||pr.blundered_material).length)].replace("{best_move}",bM);if(eL>=0.6)return pr.eval_drop_minor[Math.floor(Math.random()*pr.eval_drop_minor.length)].replace("{best_move}",bM);if(eL<=0.05&&m.best1===m.uci)return pr.perfect_move[Math.floor(Math.random()*pr.perfect_move.length)];}return`Move ${Math.ceil((p+1)/2)}: ${m.san} played.`;}
-function updateCoach(t){document.getElementById("coachText").textContent=t;}
-function smartSpeak(t,d){return new Promise(r=>{if(isMuted||!appSettings.ttsVoiceEnabled||!window.speechSynthesis){setTimeout(r,d);return;}window.speechSynthesis.cancel();currentUtterance=new SpeechSynthesisUtterance(t);currentUtterance.rate=appSettings.speechRate||1.0;currentUtterance.onend=()=>{currentUtterance=null;r();};currentUtterance.onerror=()=>{currentUtterance=null;r();};try{window.speechSynthesis.speak(currentUtterance);}catch(e){r();}});}
-function sleep(ms){return new Promise(r=>setTimeout(r,ms));}
-const bE=document.getElementById("chessboard"),pL=document.getElementById("piece-layer");
-function createBoardGrid(){bE.innerHTML="";for(let r=8;r>=1;r--){for(let f=0;f<8;f++){const sq=document.createElement("div");sq.className=`square ${(r+f)%2!==0?'light':'dark'}`;bE.appendChild(sq);}}}
-function getPieceUrl(c,t){let pK=c+t;if(pieceSetDB&&pieceSetDB[appSettings.activePieceSet]){const cf=pieceSetDB[appSettings.activePieceSet];return`${cf.src_path}${cf.pieces[pK]}`;}return`pieces/${pK}.png`;}
-function renderPieces(f){try{const tC=new Chess(f);pL.innerHTML="";const bA=tC.board();for(let r=0;r<8;r++){for(let f=0;f<8;f++){if(bA[r][f]){const p=document.createElement("div");p.className="piece";p.style.backgroundImage=`url(${getPieceUrl(bA[r][f].color,bA[r][f].type)})`;p.style.transform=`translate(${f*100}%, ${r*100}%)`;pL.appendChild(p);}}}}catch(e){}}
-async function checkLocalBookBin(f,u){if(!bookBuffer)return false;try{return getBookMoves(f,bookBuffer).some(m=>m.uci===u);}catch(e){return false;}}
+
+function saveSettings() {
+    try { localStorage.setItem("chessReviewSettings", JSON.stringify(appSettings)); } catch (e) {}
+}
+
+function updateMuteIcon() {
+    document.getElementById("muteIcon").src = isMuted ? "pieces/mute.png" : "pieces/unmute.png";
+}
+
+document.addEventListener("DOMContentLoaded", async () => {
+    loadSettings();
+    const bm = document.getElementById('backModal');
+    const sm = document.getElementById('settingsModal');
+    
+    try {
+        if (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.App) {
+            window.Capacitor.Plugins.App.addListener('backButton', () => {
+                if (!sm.classList.contains("hidden")) sm.classList.add("hidden");
+                else if (!document.getElementById("devModal").classList.contains("hidden")) document.getElementById("devModal").classList.add("hidden");
+                else bm.classList.remove('hidden');
+            });
+        }
+    } catch (e) {}
+    
+    document.getElementById("uiBackBtn").onclick = (e) => { e.preventDefault(); bm.classList.remove('hidden'); };
+    document.getElementById("cancelBackBtn").onclick = () => bm.classList.add('hidden');
+    document.getElementById("confirmBackBtn").onclick = () => window.location.href = "home.html";
+    document.getElementById("uiSettingsBtn").onclick = () => { syncSettingsToModal(); sm.classList.remove('hidden'); };
+    document.getElementById("closeSettingsBtn").onclick = () => { commitSettingsFromModal(); sm.classList.add('hidden'); };
+    
+    document.getElementById("muteBtn").onclick = () => {
+        isMuted = !isMuted;
+        appSettings.ttsVoiceEnabled = !isMuted;
+        saveSettings();
+        updateMuteIcon();
+        if (isMuted && window.speechSynthesis) window.speechSynthesis.cancel();
+    };
+    
+    bindSettingsSliders();
+    
+    const p = new URLSearchParams(location.search);
+    const gId = p.get("gameId");
+    if (!gId) return alert("No game ID provided.");
+    
+    try {
+        let loc = JSON.parse(localStorage.getItem("chessReviewGames") || "[]");
+        const i = loc.findIndex(g => g.id === gId);
+        if (i !== -1) {
+            game = loc[i];
+            await saveGameToDB(game);
+            loc.splice(i, 1);
+            localStorage.setItem("chessReviewGames", JSON.stringify(loc));
+        } else {
+            game = await new Promise((r) => {
+                const req = indexedDB.open("ChessReviewDB", 3);
+                req.onsuccess = () => {
+                    const db = req.result;
+                    if (!db.objectStoreNames.contains("games")) return r(null);
+                    const gr = db.transaction("games", "readonly").objectStore("games").get(gId);
+                    gr.onsuccess = () => r(gr.result);
+                    gr.onerror = () => r(null);
+                };
+                req.onerror = () => r(null);
+            });
+        }
+        
+        if (!game) return alert("Game not found.");
+        
+        if (!game.moves && game.pgn) {
+            const t = new Chess();
+            t.loadPgn(game.pgn);
+            const h = t.history({ verbose: true });
+            const rc = new Chess();
+            game.moves = [];
+            for (let m of h) {
+                let fb = rc.fen();
+                rc.move(m.san);
+                game.moves.push({
+                    san: m.san,
+                    uci: m.from + m.to + (m.promotion || ''),
+                    from: m.from,
+                    to: m.to,
+                    fenBefore: fb,
+                    fenAfter: rc.fen()
+                });
+            }
+            await saveGameToDB(game);
+        }
+        
+        analysisIndex = game.moves.findIndex(m => m.eval === undefined);
+        if (analysisIndex === -1) analysisIndex = game.moves.length;
+        
+        const u = (appSettings.username || "").toLowerCase().trim();
+        const wP = (game.white || "").toLowerCase().trim();
+        const bP = (game.black || "").toLowerCase().trim();
+        isUserPerspective = (u !== "" && (u === wP || u === bP));
+    } catch (e) {}
+    
+    createBoardGrid();
+    
+    try {
+        const [c, b, ea, eb, ps] = await Promise.all([
+            fetch('comments.json').catch(() => null),
+            fetch('book.bin').catch(() => null),
+            fetch('ecoA.json').catch(() => null),
+            fetch('ecoB.json').catch(() => null),
+            fetch('pieces.json').catch(() => null)
+        ]);
+        if (c && c.ok) commentsDB = await c.json();
+        if (b && b.ok) bookBuffer = await b.arrayBuffer();
+        if (ps && ps.ok) pieceSetDB = await ps.json();
+        
+        let re = {};
+        if (ea && ea.ok) Object.assign(re, await ea.json());
+        if (eb && eb.ok) Object.assign(re, await eb.json());
+        
+        for (let k in re) {
+            const bf = k.split(" ").slice(0, 4).join(" ");
+            normalizedEcoDB[bf] = re[k].name;
+        }
+    } catch (e) {
+        trace(e.message, true);
+    }
+    
+    if (game && game.moves && game.moves.length > 0) renderPieces(game.moves[0].fenBefore);
+    
+    if ((appSettings.username || "").toLowerCase().trim() === "itz_yash8636") {
+        const dm = document.getElementById("devModal");
+        dm.classList.remove("hidden");
+        document.getElementById("devSaveBtn").onclick = () => {
+            devFixedDepth = parseInt(document.getElementById("devDepthInput").value);
+            dm.classList.add("hidden");
+            startPipelines();
+        };
+        document.getElementById("devNormalBtn").onclick = () => {
+            dm.classList.add("hidden");
+            startPipelines();
+        };
+    } else {
+        startPipelines();
+    }
+});
+
+function syncSettingsToModal() {
+    document.getElementById("cfgVoiceEnabled").checked = appSettings.ttsVoiceEnabled;
+    document.getElementById("cfgMoveSpeed").value = appSettings.moveSpeed;
+    document.getElementById("valMoveSpeed").textContent = appSettings.moveSpeed + "s";
+    document.getElementById("cfgReadingTime").value = appSettings.readingDuration;
+    document.getElementById("valReadingTime").textContent = appSettings.readingDuration + "s";
+    document.getElementById("cfgSpeechRate").value = appSettings.speechRate;
+    document.getElementById("valSpeechRate").textContent = appSettings.speechRate + "x";
+}
+
+function commitSettingsFromModal() {
+    appSettings.ttsVoiceEnabled = document.getElementById("cfgVoiceEnabled").checked;
+    appSettings.moveSpeed = parseFloat(document.getElementById("cfgMoveSpeed").value);
+    appSettings.readingDuration = parseInt(document.getElementById("cfgReadingTime").value);
+    appSettings.speechRate = parseFloat(document.getElementById("cfgSpeechRate").value);
+    isMuted = !appSettings.ttsVoiceEnabled;
+    updateMuteIcon();
+    document.documentElement.style.setProperty('--move-duration', appSettings.moveSpeed + "s");
+    saveSettings();
+}
+
+function bindSettingsSliders() {
+    document.getElementById("cfgMoveSpeed").oninput = (e) => document.getElementById("valMoveSpeed").textContent = e.target.value + "s";
+    document.getElementById("cfgReadingTime").oninput = (e) => document.getElementById("valReadingTime").textContent = e.target.value + "s";
+    document.getElementById("cfgSpeechRate").oninput = (e) => document.getElementById("valSpeechRate").textContent = e.target.value + "x";
+}
+
+function startPipelines() {
+    runBackgroundAnalysis();
+    runVisualLoop();
+}
+
+function winPercent(cp) {
+    return 100 / (1 + Math.exp(-0.00368208 * cp * 100));
+}
+
+async function runBackgroundAnalysis() {
+    sysLog("Wait Page Init", { maxThreads: maxThreads, baseDepth: baseDepth });
+    let engine;
+    
+    try {
+        engine = new Worker("stockfish/stockfish.js");
+        engine.onerror = (e) => sysLog("Engine Error", { error: e.message });
+    } catch (e) {
+        sysLog("Fatal Engine Error: Could not load multithreaded engine", { error: e.message });
+        return;
+    }
+    
+    engine.postMessage("uci");
+    engine.postMessage("setoption name Hash value 256");
+    engine.postMessage("setoption name Threads value " + maxThreads);
+    engine.postMessage("setoption name MultiPV value 2");
+    engine.postMessage("isready");
+    
+    for (let i = analysisIndex; i < game.moves.length; i++) {
+        let m = game.moves[i];
+        let f = m.fenBefore;
+        let t = devFixedDepth || baseDepth;
+        
+        if (!devFixedDepth) {
+            const pC = (f.match(/[a-zA-Z]/g) || []).filter(c => c.toLowerCase() !== 'p').length;
+            if (pC <= 6 && t > 12) t -= 2;
+        }
+        
+        m.ply = i + 1;
+        m.moveNum = Math.ceil((i + 1) / 2);
+        let iB = await checkLocalBookBin(f, m.uci);
+        
+        if (iB) {
+            m.eval = 0;
+            m.classification = "book";
+        } else {
+            const res = await evaluatePosition(engine, f, t);
+            m.eval = res.eval;
+            m.winPercent = winPercent(res.eval);
+            m.best1 = res.best1;
+            m.followup1 = res.pv1;
+            m.best1Eval = res.eval;
+            m.best1WinPct = winPercent(res.eval);
+            m.best2 = res.best2;
+            m.followup2 = res.pv2;
+            m.best2Eval = res.eval2;
+            m.best2WinPct = winPercent(res.eval2);
+            m.targetDepth = t;
+        }
+        
+        analysisIndex = i + 1;
+        await saveGameToDB(game);
+        sysLog("Move analysis complete", { moveIndex: i, moveNum: m.moveNum, uci: m.uci, depth: t });
+    }
+    
+    game.status = "partially completed";
+    await saveGameToDB(game);
+    isEngineComplete = true;
+    sysLog("Engine analysis fully complete", { totalMovesAnalysed: game.moves.length });
+}
+
+function evaluatePosition(eg, f, d) {
+    return new Promise((r) => {
+        let bP1 = "", bP2 = "", bE = 0, b2E = 0;
+        eg.onmessage = (e) => {
+            const l = e.data;
+            const i1 = l.includes(" multipv 1 ");
+            const i2 = l.includes(" multipv 2 ");
+            
+            if (i1 && l.includes(" pv ")) bP1 = l.match(/\bpv (.+)$/)?.[1] || bP1;
+            if (i2 && l.includes(" pv ")) bP2 = l.match(/\bpv (.+)$/)?.[1] || bP2;
+            
+            if (i1) {
+                if (l.includes("score cp ")) bE = parseInt(l.match(/\bscore cp (-?\d+)/)[1]) / 100;
+                if (l.includes("score mate ")) bE = parseInt(l.match(/\bscore mate (-?\d+)/)[1]) > 0 ? 100 : -100;
+            }
+            if (i2) {
+                if (l.includes("score cp ")) b2E = parseInt(l.match(/\bscore cp (-?\d+)/)[1]) / 100;
+                if (l.includes("score mate ")) b2E = parseInt(l.match(/\bscore mate (-?\d+)/)[1]) > 0 ? 100 : -100;
+            }
+            if (l.startsWith("bestmove")) {
+                if (f.split(' ')[1] === 'b') { bE = -bE; b2E = -b2E; }
+                const b1 = bP1 ? bP1.split(" ")[0] : null;
+                const b2 = bP2 ? bP2.split(" ")[0] : null;
+                r({ eval: Number(bE.toFixed(2)), eval2: Number(b2E.toFixed(2)), pv1: bP1.trim(), pv2: bP2.trim(), best1: b1, best2: b2 });
+            }
+        };
+        eg.postMessage("stop");
+        eg.postMessage("position fen " + f);
+        eg.postMessage("go depth " + d);
+    });
+}
+
+async function saveGameToDB(gO) {
+    return new Promise((r) => {
+        try {
+            const req = indexedDB.open("ChessReviewDB", 3);
+            req.onsuccess = () => {
+                const db = req.result;
+                if (!db.objectStoreNames.contains("games")) return r();
+                const tx = db.transaction("games", "readwrite");
+                tx.objectStore("games").put(gO);
+                tx.oncomplete = () => { db.close(); r(); };
+                tx.onerror = () => r();
+            };
+            req.onerror = () => r();
+        } catch (e) {
+            r();
+        }
+    });
+}
+
+function identifyOpening(mP) {
+    if (Object.keys(normalizedEcoDB).length === 0) return "Unidentified Opening";
+    for (let i = mP - 1; i >= 0; i--) {
+        const f = game.moves[i].fenAfter;
+        const bF = f.split(" ").slice(0, 4).join(" ");
+        if (normalizedEcoDB[bF]) return normalizedEcoDB[bF];
+    }
+    return "Unidentified Opening";
+}
+
+async function runVisualLoop() {
+    const sT = Date.now();
+    let fS = 0;
+    const pB = document.getElementById("visualProgressBar");
+    const tP = Math.max(1, Math.floor(game.moves.length * 0.30));
+    
+    while (true) {
+        let e = (Date.now() - sT) / 1000;
+        if (e >= 10 || analysisIndex >= tP) break;
+        if (commentsDB && commentsDB.idle_facts) {
+            const f = commentsDB.idle_facts[fS % commentsDB.idle_facts.length];
+            updateCoach(f);
+            await smartSpeak(f, 3000);
+            fS++;
+        } else {
+            await sleep(1000);
+        }
+    }
+    
+    const iO = identifyOpening(Math.min(10, game.moves.length));
+    const gP = isUserPerspective ? (commentsDB?.greetings?.own_game || ["Let's review."]) : (commentsDB?.greetings?.other_game || ["Let's review."]);
+    const gr = gP[Math.floor(Math.random() * gP.length)];
+    const oI = iO !== "Unidentified Opening" ? gr + " You played the " + iO + "." : gr + " Let's dive into the opening.";
+    
+    updateCoach(oI);
+    await smartSpeak(oI, appSettings.readingDuration * 1000);
+    
+    while (visualIndex < game.moves.length) {
+        while (analysisIndex <= visualIndex && !isEngineComplete) {
+            updateCoach("Calculating next move...", true);
+            await sleep(200);
+        }
+        const m = game.moves[visualIndex];
+        renderPieces(m.fenAfter);
+        pB.style.width = (((visualIndex + 1) / game.moves.length) * 100) + "%";
+        let c = buildMoveReaction(m, visualIndex);
+        updateCoach(c);
+        await smartSpeak(c, appSettings.readingDuration * 1000);
+        visualIndex++;
+        
+        if (isEngineComplete) {
+            if (window.speechSynthesis) window.speechSynthesis.cancel();
+            isMuted = true;
+            document.documentElement.style.setProperty('--move-duration', '0.05s');
+            while (visualIndex < game.moves.length) {
+                const fM = game.moves[visualIndex];
+                renderPieces(fM.fenAfter);
+                pB.style.width = (((visualIndex + 1) / game.moves.length) * 100) + "%";
+                await sleep(50);
+                visualIndex++;
+            }
+            break;
+        }
+    }
+    
+    updateCoach("Calculations complete! Redirecting to report...");
+    game.opening = identifyOpening(game.moves.length);
+    await saveGameToDB(game);
+    await sleep(600);
+    window.location.href = "analysis.html?gameId=" + game.id;
+}
+
+function buildMoveReaction(m, p) {
+    if (!commentsDB) return "Move " + Math.ceil((p + 1) / 2) + ": " + m.san;
+    const pr = isUserPerspective ? commentsDB.reactions.user : commentsDB.reactions.other;
+    if (m.classification === "book") return "Move " + Math.ceil((p + 1) / 2) + ": " + m.san + " is a recognized book move.";
+    
+    if (p > 0) {
+        const pE = game.moves[p - 1].eval || 0;
+        const cE = m.eval || 0;
+        const iW = (p % 2 === 0);
+        const eL = iW ? (pE - cE) : (cE - pE);
+        const bM = m.best1 || "a better continuation";
+        
+        if (eL >= 2.0) return (pr.eval_drop_major || pr.blundered_material)[Math.floor(Math.random() * (pr.eval_drop_major || pr.blundered_material).length)].replace("{best_move}", bM);
+        if (eL >= 0.6) return pr.eval_drop_minor[Math.floor(Math.random() * pr.eval_drop_minor.length)].replace("{best_move}", bM);
+        if (eL <= 0.05 && m.best1 === m.uci) return pr.perfect_move[Math.floor(Math.random() * pr.perfect_move.length)];
+    }
+    return "Move " + Math.ceil((p + 1) / 2) + ": " + m.san + " played.";
+}
+
+function updateCoach(t) { document.getElementById("coachText").textContent = t; }
+
+function smartSpeak(t, d) {
+    return new Promise(r => {
+        if (isMuted || !appSettings.ttsVoiceEnabled || !window.speechSynthesis) {
+            setTimeout(r, d);
+            return;
+        }
+        window.speechSynthesis.cancel();
+        currentUtterance = new SpeechSynthesisUtterance(t);
+        currentUtterance.rate = appSettings.speechRate || 1.0;
+        currentUtterance.onend = () => { currentUtterance = null; r(); };
+        currentUtterance.onerror = () => { currentUtterance = null; r(); };
+        try { window.speechSynthesis.speak(currentUtterance); } catch (e) { r(); }
+    });
+}
+
+function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+const bE = document.getElementById("chessboard"), pL = document.getElementById("piece-layer");
+
+function createBoardGrid() {
+    bE.innerHTML = "";
+    for (let r = 8; r >= 1; r--) {
+        for (let f = 0; f < 8; f++) {
+            const sq = document.createElement("div");
+            sq.className = "square " + ((r + f) % 2 !== 0 ? 'light' : 'dark');
+            bE.appendChild(sq);
+        }
+    }
+}
+
+function getPieceUrl(c, t) {
+    let pK = c + t;
+    if (pieceSetDB && pieceSetDB[appSettings.activePieceSet]) {
+        const cf = pieceSetDB[appSettings.activePieceSet];
+        return cf.src_path + cf.pieces[pK];
+    }
+    return "pieces/" + pK + ".png";
+}
+
+function renderPieces(f) {
+    try {
+        const tC = new Chess(f);
+        pL.innerHTML = "";
+        const bA = tC.board();
+        for (let r = 0; r < 8; r++) {
+            for (let f = 0; f < 8; f++) {
+                if (bA[r][f]) {
+                    const p = document.createElement("div");
+                    p.className = "piece";
+                    p.style.backgroundImage = "url(" + getPieceUrl(bA[r][f].color, bA[r][f].type) + ")";
+                    p.style.transform = "translate(" + (f * 100) + "%, " + (r * 100) + "%)";
+                    pL.appendChild(p);
+                }
+            }
+        }
+    } catch (e) {}
+}
+
+async function checkLocalBookBin(f, u) {
+    if (!bookBuffer) return false;
+    try {
+        return getBookMoves(f, bookBuffer).some(m => m.uci === u);
+    } catch (e) {
+        return false;
+    }
+}
 </script>
 <script src="debugger.js"></script>
 </body>
