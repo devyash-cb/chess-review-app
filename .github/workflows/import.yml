@@ -1,0 +1,47 @@
+name: Fetch and Unzip Drive File
+
+on:
+  # Allows you to run this workflow manually from the Actions tab
+  workflow_dispatch: 
+  # You can uncomment the lines below to run it automatically on every push to main
+  # push:
+  #   branches:
+  #     - main
+
+jobs:
+  build-and-extract:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download Zip file from Google Drive
+        # Using curl with -L to follow redirects which is required for Google Drive links
+        run: |
+          curl -L "https://drive.google.com/uc?export=download&id=1wVfsM3JIUw8NEN4OczAC7v3cV48iz7B0" -o archive.zip
+
+      - name: Create index folder and Unzip
+        run: |
+          # Create the index directory (no error if it already exists)
+          mkdir -p index
+          
+          # Unzip the downloaded archive directly into the index folder
+          unzip archive.zip -d index/
+          
+          # Remove the zip file after extraction to keep the workspace clean
+          rm archive.zip
+
+      - name: Verify extracted contents
+        run: |
+          echo "Listing contents of the index folder:"
+          ls -la index/
+
+      # OPTIONAL: Uncomment this block if you want the bot to commit the unzipped files back to your GitHub repo
+      # - name: Commit and Push changes
+      #   run: |
+      #     git config --global user.name "github-actions[bot]"
+      #     git config --global user.email "github-actions[bot]@users.noreply.github.com"
+      #     git add index/
+      #     # Only commit if there are changes to avoid workflow errors
+      #     git diff --quiet && git diff --staged --quiet || (git commit -m "Add extracted files from Google Drive" && git push)
