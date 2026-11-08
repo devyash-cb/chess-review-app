@@ -1,0 +1,73 @@
+name: Build Lichess FEN Dataset
+
+on:
+  workflow_dispatch:
+    inputs:
+      fresh:
+        description: "Ignore saved checkpoint and start over (normally leave false)"
+        required: false
+        type: boolean
+        default: false
+  schedule:
+    - cron: "17 1 * * *"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: lichess-fen-dataset-builder
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 1
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Build or resume dataset
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          START_MONTH: "2026-10"
+          MAX_MONTHS: "12"
+          CHECKPOINT_SECONDS: "1800"
+          DATASET_RANDOM_SEED: "20261108"
+        run: |
+          if [ "${{ inputs.fresh }}" = "true" ]; then
+            python scripts/build_dataset.py --fresh
+          else
+            python scripts/build_dataset.py
+          fi
+
+      - name: Package completed JSON files
+        run: python scripts/package_dataset.py
+        if: always()
+
+      - name: Commit dataset progress to main
+        if: always()
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add dataset/
+          if ! git diff --cached --quiet; then
+            git commit -m "Update Lichess FEN dataset progress"
+            git push origin HEAD:main
+          fi
