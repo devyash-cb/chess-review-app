@@ -345,6 +345,10 @@ class ChessSocket:
 
         found: dict[int, dict] = {}
         raw_messages = []
+        # The API may replace our client taskId with a server-generated one.
+        # Track the first response ID and use it to group this single in-flight request.
+        response_task_id = None
+        response_task_ids = set()
         best_seen = False
         last_message = time.monotonic()
         deadline = time.monotonic() + 90
@@ -364,7 +368,9 @@ class ChessSocket:
                     f"Chess API WebSocket receive failed: {type(exc).__name__}: {exc}; "
                     f"close_status={close_status!r}; close_reason={close_reason!r}; "
                     f"connected={getattr(self.ws, 'connected', None)!r}; "
-                    f"taskId={task_id}; request={json.dumps(payload, ensure_ascii=False)}"
+                    f"requested_taskId={task_id}; response_taskIds={sorted(response_task_ids)}; "
+                    f"request={json.dumps(payload, ensure_ascii=False)}; "
+                    f"recent_raw_messages={json.dumps(raw_messages[-20:], ensure_ascii=False)[:6000]}"
                 ) from exc
 
             try:
@@ -378,12 +384,31 @@ class ChessSocket:
                 if not isinstance(item, dict):
                     continue
                 raw_messages.append(item)
-                if item.get("taskId") not in (None, task_id):
-                    continue
+
+                # Do not require the server to echo our client taskId. The HTTPS
+                # endpoint has returned a different server-generated ID in testing.
+                # Since this socket sends one position at a time, the first response
+                # ID identifies the active stream; subsequent IDs are retained in
+                # diagnostics but ignored if they belong to another stream.
+                item_task_id = item.get("taskId")
+                if item_task_id is not None:
+                    item_task_id = str(item_task_id)
+                    response_task_ids.add(item_task_id)
+                    if response_task_id is None:
+                        response_task_id = item_task_id
+                    elif item_task_id != response_task_id:
+                        continue
+
                 if item.get("type") == "error" or item.get("error"):
                     raise RuntimeError(
                         "Chess API WebSocket returned an API error: "
-                        + json.dumps(item, ensure_ascii=False)[:3000]
+                        + json.dumps({
+                            "request": payload,
+                            "requested_taskId": task_id,
+                            "response_taskIds": sorted(response_task_ids),
+                            "error_message": item,
+                            "recent_raw_messages": raw_messages[-20:],
+                        }, ensure_ascii=False)[:7000]
                     )
                 rank = parse_rank(item)
                 move = item.get("move")
@@ -408,7 +433,8 @@ class ChessSocket:
             recent = raw_messages[-20:]
             raise RuntimeError(
                 f"Chess API WebSocket completed without 5 distinct ranked MultiPV moves "
-                f"(received {len(moves)}). Recent raw messages: "
+                f"(received {len(moves)}). requested_taskId={task_id}; "
+                f"response_taskIds={sorted(response_task_ids)}. Recent raw messages: "
                 f"{json.dumps(recent, ensure_ascii=False)[:6000]}"
             )
         return moves, raw_messages
