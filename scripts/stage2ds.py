@@ -314,7 +314,7 @@ def download_drive():
     temp = Path("stage2ds_download")
     if temp.exists(): shutil.rmtree(temp)
     temp.mkdir()
-    subprocess.run([sys.executable, "-m", "gdown", "--folder", DRIVE_URL, "-O", str(temp), "--remaining-ok"], check=True)
+    subprocess.run([sys.executable, "-m", "gdown", "--folder", DRIVE_URL, "-O", str(temp)], check=True)
     files = sorted(temp.rglob("*.json"), key=lambda p: p.name.lower())
     if len(files) != EXPECTED_FILES:
         raise RuntimeError(f"Google Drive folder returned {len(files)} JSON files; expected {EXPECTED_FILES}.")
