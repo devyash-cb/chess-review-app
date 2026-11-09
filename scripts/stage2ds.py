@@ -5,7 +5,7 @@ The preflight deliberately refuses to start the 1.25M-position run unless the
 Chess-API WebSocket response exposes five distinct MultiPV candidates.
 """
 from __future__ import annotations
-import argparse, json, os, random, re, shutil, sqlite3, subprocess, sys, time, uuid, zipfile
+import argparse, json, os, random, re, shutil, sqlite3, subprocess, sys, time, uuid, zipfile, threading
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -14,6 +14,8 @@ import requests
 import websocket
 
 ROOT = Path("stage2ds")
+TEMP_STORAGE = Path("stage2dstempstorage")
+TEMP_ZIP = Path("stage2dstempstorage.zip")
 DB_PATH = ROOT / "progress.sqlite"
 ERROR_DIR = ROOT / "errorlogs"
 DRIVE_URL = os.getenv("DRIVE_FOLDER_URL", "https://drive.google.com/drive/folders/1FEext-LcjonVRFSHeav0Kxb2xOhS70n9")
@@ -156,6 +158,8 @@ def status_text(con):
     errs = con.execute("SELECT file_name,position_index,error FROM errors WHERE status IN ('failed','final_failed','retry_reserved') ORDER BY updated_at DESC LIMIT 3").fetchall()
     rec = con.execute("SELECT file_name,position_index,ca_json FROM recent ORDER BY updated_at DESC LIMIT 3").fetchall()
     progress_line = "File progress: -"
+    if state == "downloading_drive":
+        progress_line = f"Drive download: {runtime_get(con, 'download_completed', '0')}/{runtime_get(con, 'download_total', str(EXPECTED_FILES))} files complete; consecutive errors: {runtime_get(con, 'download_consecutive_errors', '0')}/3"
     frow = con.execute("SELECT dataset_id,total,last_index FROM files WHERE file_name=?", (current_file,)).fetchone()
     if frow:
         failed_n = con.execute("SELECT COUNT(*) n FROM errors WHERE dataset_id=? AND status IN ('failed','final_failed','retry_reserved')", (frow["dataset_id"],)).fetchone()["n"]
@@ -194,6 +198,38 @@ def poll_bot(con, force=False):
         if chat == allowed and text in ("/ping", "/status"):
             try: tg_message(status_text(con))
             except Exception as exc: print(f"Could not reply to /ping: {exc}")
+
+
+
+class TelegramPoller:
+    """Background Telegram command polling so /ping works during every active job."""
+    def __init__(self):
+        self.stop_event = threading.Event()
+        self.thread = threading.Thread(target=self._run, name="stage2ds-telegram-poller", daemon=True)
+
+    def start(self):
+        if os.getenv("TELEGRAM_BOT_TOKEN") and os.getenv("TELEGRAM_CHAT_ID"):
+            self.thread.start()
+        return self
+
+    def _run(self):
+        con = None
+        try:
+            con = db_open()
+            while not self.stop_event.is_set():
+                try:
+                    poll_bot(con, force=True)
+                except Exception as exc:
+                    print(f"Telegram background poll warning: {exc}")
+                self.stop_event.wait(2)
+        finally:
+            if con:
+                con.close()
+
+    def stop(self):
+        self.stop_event.set()
+        if self.thread.is_alive():
+            self.thread.join(timeout=5)
 
 
 def parse_rank(data: dict) -> int | None:
@@ -310,20 +346,126 @@ def publish_snapshot():
     return zip_path
 
 
-def download_drive():
-    temp = Path("stage2ds_download")
-    if temp.exists(): shutil.rmtree(temp)
-    temp.mkdir()
-    subprocess.run([sys.executable, "-m", "gdown", "--folder", DRIVE_URL, "-O", str(temp)], check=True)
-    files = sorted(temp.rglob("*.json"), key=lambda p: p.name.lower())
+def valid_downloaded_json(path: Path) -> bool:
+    """Only treat a complete, correctly-shaped 10,000-position JSON as cached."""
+    try:
+        obj = json.loads(path.read_text(encoding="utf-8"))
+        return (isinstance(obj, dict) and isinstance(obj.get("positions"), list)
+                and len(obj["positions"]) == EXPECTED_POSITIONS
+                and all(k in obj for k in ("rating_range", "dataset_id", "positions")))
+    except Exception:
+        return False
+
+
+def download_drive_resumable(max_consecutive_errors: int = 3):
+    """Download missing Drive files individually into persistent stage2dstempstorage/."""
+    import gdown
+
+    TEMP_STORAGE.mkdir(parents=True, exist_ok=True)
+    con = db_open()
+    poller = TelegramPoller().start()
+    try:
+        runtime_set(con, status="downloading_drive", current_file="Drive folder listing",
+                    current_index="-", batch_length="-", next_batch_at="")
+        tg_message("STAGE2DS DOWNLOAD STARTED. Existing complete files in stage2dstempstorage/ will be skipped.")
+        print("[DOWNLOAD] Listing the public Drive folder...")
+        entries = gdown.download_folder(url=DRIVE_URL, skip_download=True, quiet=True)
+        entries = [x for x in entries if str(getattr(x, "path", "")).lower().endswith(".json")]
+        if len(entries) != EXPECTED_FILES:
+            raise RuntimeError(f"Google Drive listing returned {len(entries)} JSON files; expected {EXPECTED_FILES}.")
+        names = [Path(str(x.path)).name for x in entries]
+        if len(set(names)) != len(names):
+            raise RuntimeError("Google Drive folder contains duplicate JSON filenames.")
+
+        completed = sum(1 for name in names if valid_downloaded_json(TEMP_STORAGE / name))
+        runtime_set(con, download_total=len(entries), download_completed=completed,
+                    download_consecutive_errors=0)
+        consecutive_errors = 0
+        last_progress_update = 0.0
+
+        for number, item in enumerate(entries, 1):
+            name = Path(str(item.path)).name
+            dest = TEMP_STORAGE / name
+            if valid_downloaded_json(dest):
+                print(f"[SKIP] {name} already downloaded and validated.")
+                continue
+            if dest.exists():
+                dest.unlink()  # discard an invalid final file; any .part resume data is retained
+
+            runtime_set(con, status="downloading_drive", current_file=name,
+                        current_index=f"{number}/{len(entries)}")
+            print(f"[DOWNLOAD {number}/{len(entries)}] {name}")
+            try:
+                def progress_callback(done, total):
+                    nonlocal last_progress_update
+                    now_mono = time.monotonic()
+                    if now_mono - last_progress_update >= 5:
+                        runtime_set(con, download_file_bytes=done,
+                                    download_file_total=total if total is not None else "unknown")
+                        last_progress_update = now_mono
+
+                # resume=True reuses partial .part files and skips completed output files.
+                gdown.download(id=item.id, output=str(dest), quiet=False, resume=True,
+                               retries=0, progress=progress_callback)
+                if not valid_downloaded_json(dest):
+                    raise RuntimeError("Downloaded file failed JSON/10,000-position validation.")
+                consecutive_errors = 0
+                completed += 1
+                runtime_set(con, download_completed=completed, download_consecutive_errors=0)
+                print(f"[OK] {name} ({completed}/{len(entries)})")
+            except Exception as exc:
+                consecutive_errors += 1
+                runtime_set(con, download_consecutive_errors=consecutive_errors)
+                print(f"[DOWNLOAD ERROR {consecutive_errors}/{max_consecutive_errors}] {name}: {exc}")
+                tg_message(f"Drive download failed ({consecutive_errors}/{max_consecutive_errors} consecutive errors): {name}\n{str(exc)[:700]}")
+                if dest.exists() and not valid_downloaded_json(dest):
+                    dest.unlink(missing_ok=True)
+                if consecutive_errors >= max_consecutive_errors:
+                    runtime_set(con, status="download_paused_after_errors", current_file=name)
+                    raise RuntimeError(
+                        f"Stopped after {max_consecutive_errors} consecutive Drive download errors. "
+                        f"{completed}/{len(entries)} complete files are preserved in {TEMP_STORAGE}/. "
+                        "Rerun the workflow with phase=start; completed files will be skipped."
+                    ) from exc
+    
+        missing = [name for name in names if not valid_downloaded_json(TEMP_STORAGE / name)]
+        if missing:
+            raise RuntimeError(f"Download pass ended with {len(missing)} missing/incomplete files: {missing[:10]}")
+        runtime_set(con, status="drive_download_complete", download_completed=len(entries),
+                    download_consecutive_errors=0, current_file="-", current_index="-")
+        tg_message(f"DRIVE DOWNLOAD COMPLETE: all {len(entries)} JSON files are saved in {TEMP_STORAGE}/. The folder is retained for future reruns.")
+        print(f"[DOWNLOAD COMPLETE] {len(entries)} JSON files are ready.")
+    finally:
+        poller.stop()
+        con.close()
+
+
+def create_temp_storage_zip():
+    TEMP_STORAGE.mkdir(parents=True, exist_ok=True)
+    if TEMP_ZIP.exists():
+        TEMP_ZIP.unlink()
+    with zipfile.ZipFile(TEMP_ZIP, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=4) as archive:
+        for path in TEMP_STORAGE.rglob("*"):
+            if path.is_file() and not path.name.endswith((".tmp", "-wal", "-shm")):
+                archive.write(path, Path(TEMP_STORAGE.name) / path.relative_to(TEMP_STORAGE))
+    if not TEMP_ZIP.exists() or TEMP_ZIP.stat().st_size == 0:
+        raise RuntimeError("Could not create persistent Drive download cache ZIP.")
+    return TEMP_ZIP
+
+
+def prepare_dataset_from_temp():
+    files = sorted(TEMP_STORAGE.glob("*.json"), key=lambda p: p.name.lower())
     if len(files) != EXPECTED_FILES:
-        raise RuntimeError(f"Google Drive folder returned {len(files)} JSON files; expected {EXPECTED_FILES}.")
-    ROOT.mkdir(exist_ok=True)
+        raise RuntimeError(f"{TEMP_STORAGE}/ contains {len(files)} JSON files; expected {EXPECTED_FILES}.")
+    bad = [p.name for p in files if not valid_downloaded_json(p)]
+    if bad:
+        raise RuntimeError(f"Cached download contains invalid/incomplete files: {bad[:10]}")
+    if ROOT.exists():
+        shutil.rmtree(ROOT)
+    ROOT.mkdir(parents=True)
     for src in files:
-        dst = ROOT / src.name
-        if dst.exists(): raise RuntimeError(f"Duplicate JSON filename in Drive folder: {src.name}")
-        shutil.copy2(src, dst)
-    shutil.rmtree(temp)
+        shutil.copy2(src, ROOT / src.name)
+    ERROR_DIR.mkdir(parents=True, exist_ok=True)
 
 
 def validate_dataset(con):
@@ -354,45 +496,50 @@ def validate_dataset(con):
 
 
 def preflight():
-    if ROOT.exists(): shutil.rmtree(ROOT)
-    ROOT.mkdir(); ERROR_DIR.mkdir(parents=True)
-    print("[1/7] Downloading the public Google Drive folder...")
-    download_drive()
+    print("[1/7] Preparing stage2ds/ from persistent stage2dstempstorage/...")
+    prepare_dataset_from_temp()
     con = db_open()
-    print("[2/7] Validating all 125 JSON files and 1,250,000 positions...")
-    validate_dataset(con)
-    print("[3/7] Testing SQLite write/read...")
-    con.execute("INSERT OR REPLACE INTO runtime(key,value) VALUES('preflight_test','ok')")
-    con.commit()
-    if con.execute("SELECT value FROM runtime WHERE key='preflight_test'").fetchone()[0] != "ok":
-        raise RuntimeError("SQLite read/write test failed")
-    con.execute("DELETE FROM runtime WHERE key='preflight_test'"); con.commit()
-    print("[4/7] Checking Telegram credentials, polling mode and send permission...")
-    require_env("TELEGRAM_CHAT_ID")
-    webhook = telegram_call("getWebhookInfo")
-    if webhook.get("url"):
-        raise RuntimeError("Telegram bot has a webhook configured. Disable the webhook before using /ping polling.")
-    tg_message("STAGE2DS PREFLIGHT: Telegram connection and message delivery are working.", strict=True)
-    test_doc = Path("/tmp/stage2ds_telegram_test.txt")
-    test_doc.write_text("Stage2DS Telegram document upload test passed.\n", encoding="utf-8")
-    tg_document(test_doc, "Preflight document-upload test", strict=True)
-    test_doc.unlink(missing_ok=True)
-    print("[5/7] Testing Chess API MultiPV=5 on one sample FEN...")
-    first = json.loads(sorted(ROOT.glob("*.json"), key=lambda p: p.name.lower())[0].read_text(encoding="utf-8"))
-    fen = first["positions"][0]["fen"]
-    sock = ChessSocket()
+    poller = TelegramPoller().start()
     try:
-        moves, raw = sock.analyse(fen)
-        atomic_json(ROOT / "preflight_api_sample.json", {"fen": fen, "moves": moves, "messages": raw})
+        runtime_set(con, status="preflight_validation", current_file="-", current_index="-")
+        print("[2/7] Validating all 125 JSON files and 1,250,000 positions...")
+        validate_dataset(con)
+        print("[3/7] Testing SQLite write/read...")
+        con.execute("INSERT OR REPLACE INTO runtime(key,value) VALUES('preflight_test','ok')")
+        con.commit()
+        if con.execute("SELECT value FROM runtime WHERE key='preflight_test'").fetchone()[0] != "ok":
+            raise RuntimeError("SQLite read/write test failed")
+        con.execute("DELETE FROM runtime WHERE key='preflight_test'"); con.commit()
+        print("[4/7] Checking Telegram credentials, polling mode and send permission...")
+        require_env("TELEGRAM_CHAT_ID")
+        webhook = telegram_call("getWebhookInfo")
+        if webhook.get("url"):
+            raise RuntimeError("Telegram bot has a webhook configured. Disable the webhook before using /ping polling.")
+        tg_message("STAGE2DS PREFLIGHT: Telegram connection and message delivery are working.", strict=True)
+        test_doc = Path("/tmp/stage2ds_telegram_test.txt")
+        test_doc.write_text("Stage2DS Telegram document upload test passed.\n", encoding="utf-8")
+        tg_document(test_doc, "Preflight document-upload test", strict=True)
+        test_doc.unlink(missing_ok=True)
+        print("[5/7] Testing Chess API MultiPV=5 on one sample FEN...")
+        first = json.loads(sorted(ROOT.glob("*.json"), key=lambda p: p.name.lower())[0].read_text(encoding="utf-8"))
+        fen = first["positions"][0]["fen"]
+        sock = ChessSocket()
+        try:
+            moves, raw = sock.analyse(fen)
+            atomic_json(ROOT / "preflight_api_sample.json", {"fen": fen, "moves": moves, "messages": raw})
+        finally:
+            sock.close()
+        print("[6/7] Testing full-folder ZIP creation...")
+        z = create_zip()
+        if not z.exists() or z.stat().st_size == 0:
+            raise RuntimeError("ZIP test failed")
+        print("[7/7] Preflight passed. GitHub release write is tested by the following workflow upload step.")
+        runtime_set(con, status="preflight_passed", current_file="-", current_index="-",
+                    batch_length="-", next_batch_at="")
+        tg_message("STAGE2DS PREFLIGHT PASSED. All 125 files validated; SQLite, Telegram, Chess API five-variant response and ZIP creation passed. Processing will now start.")
     finally:
-        sock.close()
-    print("[6/7] Testing full-folder ZIP creation...")
-    z = create_zip()
-    if not z.exists() or z.stat().st_size == 0: raise RuntimeError("ZIP test failed")
-    print("[7/7] Preflight passed. GitHub release write is tested by the following workflow upload step.")
-    runtime_set(con, status="preflight_passed", current_file="-", current_index="-", batch_length="-", next_batch_at="")
-    tg_message("STAGE2DS PREFLIGHT PASSED. All 125 files validated; SQLite, Telegram, Chess API five-variant response and ZIP creation passed. Processing will now start.")
-    con.close()
+        poller.stop()
+        con.close()
 
 
 def restore_json_from_errors(con, obj):
@@ -418,7 +565,6 @@ def pause_with_poll(con, seconds: int):
     runtime_set(con, status="break", next_batch_at=time.time() + seconds)
     end = time.monotonic() + seconds
     while time.monotonic() < end:
-        poll_bot(con)
         time.sleep(min(2, max(0.1, end - time.monotonic())))
     runtime_set(con, status="processing", next_batch_at="")
 
@@ -442,7 +588,7 @@ def complete_file(con, path: Path, obj):
 
 
 def process_job(max_minutes=SAFE_JOB_MINUTES):
-    con = db_open(); sock = ChessSocket()
+    con = db_open(); poller = TelegramPoller().start(); sock = ChessSocket()
     start = time.monotonic(); deadline = start + max_minutes * 60
     tg_message("STAGE2DS JOB STARTED: processing will continue from the latest saved checkpoint.")
     runtime_set(con, status="processing", job_started=now())
@@ -465,7 +611,6 @@ def process_job(max_minutes=SAFE_JOB_MINUTES):
                 if time.monotonic() >= deadline - 900:
                     stop = True; break
                 runtime_set(con, current_file=path.name, current_index=idx, status="processing", batch_length=batch_target)
-                poll_bot(con)
                 try:
                     moves, _ = sock.analyse(pos["fen"])
                     pos["ca"] = moves
@@ -514,7 +659,7 @@ def process_job(max_minutes=SAFE_JOB_MINUTES):
         runtime_set(con, status="job_checkpointing", current_index="-")
         checkpoint(con)
     finally:
-        sock.close(); con.close()
+        sock.close(); poller.stop(); con.close()
     # Dispatch the next workflow run only after the latest complete folder snapshot is uploaded.
     con2 = db_open()
     remaining = con2.execute("SELECT COUNT(*) n FROM files WHERE status!='completed'").fetchone()["n"]
@@ -525,7 +670,7 @@ def process_job(max_minutes=SAFE_JOB_MINUTES):
 
 
 def retry_job(max_minutes=SAFE_JOB_MINUTES):
-    con = db_open(); sock = ChessSocket()
+    con = db_open(); poller = TelegramPoller().start(); sock = ChessSocket()
     start = time.monotonic(); deadline = start + max_minutes * 60
     tg_message("FINAL RETRY JOB STARTED: each recorded failed position will receive at most one final retry.")
     runtime_set(con, status="final_retry", current_file="-", current_index="-")
@@ -545,7 +690,6 @@ def retry_job(max_minutes=SAFE_JOB_MINUTES):
             obj = load_file(path)
             target = next(p for p in obj["positions"] if int(p["index"]) == int(row["position_index"]))
             runtime_set(con, current_file=row["file_name"], current_index=row["position_index"], status="final_retry", batch_length=retry_batch_target)
-            poll_bot(con)
             try:
                 moves, _ = sock.analyse(row["fen"])
                 target["ca"] = moves
@@ -580,7 +724,7 @@ def retry_job(max_minutes=SAFE_JOB_MINUTES):
                 log = error_path(path.name)
                 if log.exists(): tg_document(log, f"Updated final error log for {path.name}")
     finally:
-        sock.close()
+        sock.close(); poller.stop()
     con.commit()
     remaining = con.execute("SELECT COUNT(*) n FROM errors WHERE status='failed' AND retry_reserved=0").fetchone()["n"]
     con.close()
@@ -617,12 +761,16 @@ def next_phase():
 def main():
     parser = argparse.ArgumentParser()
     sub = parser.add_subparsers(dest="cmd", required=True)
+    sub.add_parser("download")
+    sub.add_parser("temp-zip")
     sub.add_parser("preflight")
     p = sub.add_parser("process"); p.add_argument("--max-minutes", type=int, default=SAFE_JOB_MINUTES)
     r = sub.add_parser("retry"); r.add_argument("--max-minutes", type=int, default=SAFE_JOB_MINUTES)
     sub.add_parser("zip"); sub.add_parser("next-phase")
     args = parser.parse_args()
-    if args.cmd == "preflight": preflight()
+    if args.cmd == "download": download_drive_resumable(max_consecutive_errors=3)
+    elif args.cmd == "temp-zip": print(create_temp_storage_zip())
+    elif args.cmd == "preflight": preflight()
     elif args.cmd == "process": process_job(args.max_minutes)
     elif args.cmd == "retry": retry_job(args.max_minutes)
     elif args.cmd == "zip": print(create_zip())
