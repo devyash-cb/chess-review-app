@@ -321,7 +321,6 @@ class ChessSocket:
             API_WS,
             timeout=15,
             enable_multithread=True,
-            origin="https://chess-api.com",
         )
 
     def analyse(self, fen: str) -> tuple[list[str], list[dict]]:
