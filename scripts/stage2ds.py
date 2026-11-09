@@ -7,6 +7,7 @@ Chess-API WebSocket response exposes five distinct MultiPV candidates.
 from __future__ import annotations
 import argparse, json, os, random, re, shutil, sqlite3, subprocess, sys, time, uuid, zipfile, threading
 from datetime import datetime, timezone
+import traceback
 from pathlib import Path
 from typing import Any
 
@@ -245,6 +246,65 @@ def parse_rank(data: dict) -> int | None:
     return None
 
 
+def chess_api_http_probe(fen: str) -> dict:
+    """Check whether the same FEN is accepted through the documented HTTPS API."""
+    payload = {
+        "fen": fen,
+        "depth": API_DEPTH,
+        "variants": API_VARIANTS,
+        "maxThinkingTime": API_MAX_TIME,
+        "taskId": "stage2ds-http-probe-" + uuid.uuid4().hex[:12],
+    }
+    response = requests.post(
+        "https://chess-api.com/v1",
+        json=payload,
+        headers={"Accept": "application/json", "User-Agent": "Stage2DS/1.0"},
+        timeout=(15, 60),
+    )
+    try:
+        data = response.json()
+    except Exception:
+        raise RuntimeError(
+            f"Chess API HTTPS probe returned non-JSON: "
+            f"HTTP {response.status_code}; body={response.text[:2000]!r}"
+        )
+    if not response.ok:
+        raise RuntimeError(
+            f"Chess API HTTPS probe failed: HTTP {response.status_code}; "
+            f"response={json.dumps(data, ensure_ascii=False)[:3000]}"
+        )
+    if not isinstance(data, dict):
+        raise RuntimeError(
+            f"Chess API HTTPS probe returned unexpected JSON type "
+            f"{type(data).__name__}: {str(data)[:2000]}"
+        )
+    if data.get("type") == "error" or data.get("error"):
+        raise RuntimeError(
+            "Chess API rejected the sample FEN/request over HTTPS: "
+            + json.dumps(data, ensure_ascii=False)[:3000]
+        )
+    if not data.get("move"):
+        raise RuntimeError(
+            "Chess API HTTPS probe returned HTTP success but no move field: "
+            + json.dumps(data, ensure_ascii=False)[:3000]
+        )
+    return {"http_status": response.status_code, "request": payload, "response": data}
+
+
+def parse_rank(data: dict) -> int | None:
+    for key in ("multipv", "multiPv", "rank", "variant"):
+        value = data.get(key)
+        if isinstance(value, int) and 1 <= value <= 5:
+            return value
+    debug = str(data.get("debug", ""))
+    match = re.search(r"\bmultipv\s+(\d+)\b", debug, re.I)
+    if match:
+        n = int(match.group(1))
+        if 1 <= n <= 5:
+            return n
+    return None
+
+
 class ChessSocket:
     def __init__(self):
         self.ws = None
@@ -252,23 +312,44 @@ class ChessSocket:
 
     def connect(self):
         if self.ws:
-            try: self.ws.close()
-            except Exception: pass
-        self.ws = websocket.create_connection(API_WS, timeout=3, enable_multithread=True)
+            try:
+                self.ws.close()
+            except Exception:
+                pass
+        # Use the site's browser origin and a longer handshake timeout.
+        self.ws = websocket.create_connection(
+            API_WS,
+            timeout=15,
+            enable_multithread=True,
+            origin="https://chess-api.com",
+        )
 
     def analyse(self, fen: str) -> tuple[list[str], list[dict]]:
+        if self.ws is None or not getattr(self.ws, "connected", False):
+            self.connect()
+
         task_id = uuid.uuid4().hex[:12]
-        payload = {"fen": fen, "depth": API_DEPTH, "variants": API_VARIANTS,
-                   "maxThinkingTime": API_MAX_TIME, "taskId": task_id}
+        payload = {
+            "fen": fen,
+            "depth": API_DEPTH,
+            "variants": API_VARIANTS,
+            "maxThinkingTime": API_MAX_TIME,
+            "taskId": task_id,
+        }
         try:
             self.ws.send(json.dumps(payload))
-        except Exception:
-            self.connect(); self.ws.send(json.dumps(payload))
+        except Exception as exc:
+            raise RuntimeError(
+                f"Chess API WebSocket send failed: {type(exc).__name__}: {exc}; "
+                f"taskId={task_id}; request={json.dumps(payload, ensure_ascii=False)}"
+            ) from exc
+
         found: dict[int, dict] = {}
         raw_messages = []
         best_seen = False
         last_message = time.monotonic()
         deadline = time.monotonic() + 90
+
         while time.monotonic() < deadline:
             self.ws.settimeout(0.5 if (best_seen or len(found) == 5) else 5)
             try:
@@ -277,25 +358,40 @@ class ChessSocket:
                 if (best_seen or len(found) == 5) and time.monotonic() - last_message >= 1.0:
                     break
                 continue
-            except Exception:
-                self.connect()
-                raise RuntimeError("Chess API WebSocket disconnected during analysis")
+            except Exception as exc:
+                close_status = getattr(self.ws, "status", None)
+                close_reason = getattr(self.ws, "close_reason", None)
+                raise RuntimeError(
+                    f"Chess API WebSocket receive failed: {type(exc).__name__}: {exc}; "
+                    f"close_status={close_status!r}; close_reason={close_reason!r}; "
+                    f"connected={getattr(self.ws, 'connected', None)!r}; "
+                    f"taskId={task_id}; request={json.dumps(payload, ensure_ascii=False)}"
+                ) from exc
+
             try:
                 message = json.loads(raw)
             except Exception:
+                raw_messages.append({"unparsed_message": str(raw)[:2000]})
                 continue
+
             batch = message if isinstance(message, list) else [message]
             for item in batch:
-                if not isinstance(item, dict): continue
+                if not isinstance(item, dict):
+                    continue
                 raw_messages.append(item)
-                if item.get("taskId") not in (None, task_id): continue
+                if item.get("taskId") not in (None, task_id):
+                    continue
                 if item.get("type") == "error" or item.get("error"):
-                    raise RuntimeError(str(item.get("text") or item.get("error") or item))
+                    raise RuntimeError(
+                        "Chess API WebSocket returned an API error: "
+                        + json.dumps(item, ensure_ascii=False)[:3000]
+                    )
                 rank = parse_rank(item)
                 move = item.get("move")
                 if item.get("type") == "bestmove":
                     best_seen = True
-                    if rank is None: rank = 1
+                    if rank is None:
+                        rank = 1
                 if rank and move:
                     old = found.get(rank)
                     old_depth = int(old.get("depth") or 0) if old else -1
@@ -303,25 +399,31 @@ class ChessSocket:
                     if old is None or new_depth >= old_depth or item.get("type") == "bestmove":
                         found[rank] = item
                 last_message = time.monotonic()
+
             if len(found) == 5 and time.monotonic() - last_message > 0.5:
                 break
+
         ordered = [found[i] for i in range(1, 6) if i in found]
         moves = [str(x.get("move")) for x in ordered if x.get("move")]
         if len(moves) != 5 or len(set(moves)) != 5:
-            # Preserve a compact diagnostic to make the preflight failure actionable.
-            types = [f"{x.get('type')}:{x.get('move')}:{parse_rank(x)}" for x in raw_messages[-20:]]
-            raise RuntimeError(f"API did not provide 5 distinct ranked MultiPV moves (received {len(moves)}). Recent messages: {types}")
+            recent = raw_messages[-20:]
+            raise RuntimeError(
+                f"Chess API WebSocket completed without 5 distinct ranked MultiPV moves "
+                f"(received {len(moves)}). Recent raw messages: "
+                f"{json.dumps(recent, ensure_ascii=False)[:6000]}"
+            )
         return moves, raw_messages
 
     def close(self):
         if self.ws:
-            try: self.ws.close()
-            except Exception: pass
-
+            try:
+                self.ws.close()
+            except Exception:
+                pass
 
 
 def analyse_with_retries(sock: ChessSocket, fen: str, attempts: int = 3) -> tuple[list[str], list[dict]]:
-    """Retry transient Chess API WebSocket failures without changing non-network errors."""
+    """Retry transient WebSocket failures while preserving the actual exception."""
     last_error = None
     for attempt in range(1, attempts + 1):
         try:
@@ -330,19 +432,53 @@ def analyse_with_retries(sock: ChessSocket, fen: str, attempts: int = 3) -> tupl
             last_error = exc
             transient = (
                 isinstance(exc, (websocket.WebSocketException, OSError, TimeoutError))
-                or "WebSocket disconnected during analysis" in str(exc)
+                or "WebSocket" in str(exc)
             )
             if not transient:
                 raise
-            print(f"[WEBSOCKET RETRY] Attempt {attempt}/{attempts} failed: {exc}")
+            print(f"[WEBSOCKET RETRY] Attempt {attempt}/{attempts} failed: {type(exc).__name__}: {exc}")
             if attempt == attempts:
                 break
             time.sleep(5 * attempt)
             try:
                 sock.connect()
             except Exception as reconnect_error:
-                print(f"[RECONNECT WARNING] {reconnect_error}")
-    raise RuntimeError(f"Chess API analysis failed after {attempts} attempts: {last_error}") from last_error
+                print(
+                    f"[RECONNECT WARNING] {type(reconnect_error).__name__}: "
+                    f"{reconnect_error}"
+                )
+    raise RuntimeError(
+        f"Chess API analysis failed after {attempts} attempts. "
+        f"Last exact error: {type(last_error).__name__}: {last_error}"
+    ) from last_error
+
+
+def report_fatal_error(command: str):
+    """Send the exact fatal traceback to Telegram as a TXT attachment."""
+    details = traceback.format_exc()
+    ERROR_DIR.mkdir(parents=True, exist_ok=True)
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
+    log_path = ERROR_DIR / f"fatal-{command}-{stamp}.txt"
+    extra = ""
+    probe_path = ROOT / "preflight_http_probe.json"
+    if probe_path.exists():
+        try:
+            extra = "\n\nLast HTTPS probe:\n" + probe_path.read_text(encoding="utf-8")[:12000]
+        except Exception:
+            pass
+    log_path.write_text(
+        f"Stage2DS fatal error\nCommand: {command}\nUTC: {now()}\n\n"
+        f"Exact traceback:\n{details}{extra}\n",
+        encoding="utf-8",
+    )
+    last_line = details.strip().splitlines()[-1] if details.strip() else "Unknown error"
+    tg_message(
+        f"STAGE2DS FATAL ERROR\nPhase: {command}\n"
+        f"Exact error: {last_line}\n"
+        f"Full traceback and request diagnostics are attached as TXT."
+    )
+    tg_document(log_path, f"Exact Stage2DS error log: {command}")
+
 
 
 def create_zip():
@@ -546,23 +682,30 @@ def preflight():
         test_doc.write_text("Stage2DS Telegram document upload test passed.\n", encoding="utf-8")
         tg_document(test_doc, "Preflight document-upload test", strict=True)
         test_doc.unlink(missing_ok=True)
-        print("[5/7] Testing Chess API MultiPV=5 on one sample FEN...")
         first = json.loads(sorted(ROOT.glob("*.json"), key=lambda p: p.name.lower())[0].read_text(encoding="utf-8"))
         fen = first["positions"][0]["fen"]
+        print("[5/8] Testing the sample FEN through the documented Chess API HTTPS endpoint...")
+        http_result = chess_api_http_probe(fen)
+        atomic_json(ROOT / "preflight_http_probe.json", {"fen": fen, **http_result})
+        print(
+            "[HTTPS OK] The Chess API accepted this exact FEN and returned move "
+            + str(http_result["response"].get("move"))
+        )
+        print("[6/8] Testing Chess API WebSocket MultiPV=5 on the same sample FEN...")
         sock = ChessSocket()
         try:
             moves, raw = analyse_with_retries(sock, fen)
             atomic_json(ROOT / "preflight_api_sample.json", {"fen": fen, "moves": moves, "messages": raw})
         finally:
             sock.close()
-        print("[6/7] Testing full-folder ZIP creation...")
+        print("[7/8] Testing full-folder ZIP creation...")
         z = create_zip()
         if not z.exists() or z.stat().st_size == 0:
             raise RuntimeError("ZIP test failed")
-        print("[7/7] Preflight passed. GitHub release write is tested by the following workflow upload step.")
+        print("[8/8] Preflight passed. GitHub release write is tested by the following workflow upload step.")
         runtime_set(con, status="preflight_passed", current_file="-", current_index="-",
                     batch_length="-", next_batch_at="")
-        tg_message("STAGE2DS PREFLIGHT PASSED. All 125 files validated; SQLite, Telegram, Chess API five-variant response and ZIP creation passed. Processing will now start.")
+        tg_message("STAGE2DS PREFLIGHT PASSED. All 125 files validated; SQLite, Telegram, Chess API HTTPS and WebSocket five-variant response, and ZIP creation passed. Processing will now start.")
     finally:
         poller.stop()
         con.close()
@@ -794,13 +937,17 @@ def main():
     r = sub.add_parser("retry"); r.add_argument("--max-minutes", type=int, default=SAFE_JOB_MINUTES)
     sub.add_parser("zip"); sub.add_parser("next-phase")
     args = parser.parse_args()
-    if args.cmd == "download": download_drive_resumable(max_consecutive_errors=3)
-    elif args.cmd == "temp-zip": print(create_temp_storage_zip())
-    elif args.cmd == "preflight": preflight()
-    elif args.cmd == "process": process_job(args.max_minutes)
-    elif args.cmd == "retry": retry_job(args.max_minutes)
-    elif args.cmd == "zip": print(create_zip())
-    elif args.cmd == "next-phase": next_phase()
+    try:
+        if args.cmd == "download": download_drive_resumable(max_consecutive_errors=3)
+        elif args.cmd == "temp-zip": print(create_temp_storage_zip())
+        elif args.cmd == "preflight": preflight()
+        elif args.cmd == "process": process_job(args.max_minutes)
+        elif args.cmd == "retry": retry_job(args.max_minutes)
+        elif args.cmd == "zip": print(create_zip())
+        elif args.cmd == "next-phase": next_phase()
+    except Exception:
+        report_fatal_error(args.cmd)
+        raise
 
 if __name__ == "__main__":
     main()
