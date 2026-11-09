@@ -319,6 +319,32 @@ class ChessSocket:
             except Exception: pass
 
 
+
+def analyse_with_retries(sock: ChessSocket, fen: str, attempts: int = 3) -> tuple[list[str], list[dict]]:
+    """Retry transient Chess API WebSocket failures without changing non-network errors."""
+    last_error = None
+    for attempt in range(1, attempts + 1):
+        try:
+            return sock.analyse(fen)
+        except Exception as exc:
+            last_error = exc
+            transient = (
+                isinstance(exc, (websocket.WebSocketException, OSError, TimeoutError))
+                or "WebSocket disconnected during analysis" in str(exc)
+            )
+            if not transient:
+                raise
+            print(f"[WEBSOCKET RETRY] Attempt {attempt}/{attempts} failed: {exc}")
+            if attempt == attempts:
+                break
+            time.sleep(5 * attempt)
+            try:
+                sock.connect()
+            except Exception as reconnect_error:
+                print(f"[RECONNECT WARNING] {reconnect_error}")
+    raise RuntimeError(f"Chess API analysis failed after {attempts} attempts: {last_error}") from last_error
+
+
 def create_zip():
     ROOT.mkdir(exist_ok=True)
     # SQLite runs in WAL mode. Merge committed WAL pages before packaging the DB.
@@ -525,7 +551,7 @@ def preflight():
         fen = first["positions"][0]["fen"]
         sock = ChessSocket()
         try:
-            moves, raw = sock.analyse(fen)
+            moves, raw = analyse_with_retries(sock, fen)
             atomic_json(ROOT / "preflight_api_sample.json", {"fen": fen, "moves": moves, "messages": raw})
         finally:
             sock.close()
@@ -612,7 +638,7 @@ def process_job(max_minutes=SAFE_JOB_MINUTES):
                     stop = True; break
                 runtime_set(con, current_file=path.name, current_index=idx, status="processing", batch_length=batch_target)
                 try:
-                    moves, _ = sock.analyse(pos["fen"])
+                    moves, _ = analyse_with_retries(sock, pos["fen"])
                     pos["ca"] = moves
                     con.execute("INSERT OR REPLACE INTO recent(dataset_id,file_name,position_index,fen,ca_json,updated_at) VALUES(?,?,?,?,?,?)",
                                 (dsid, path.name, idx, pos["fen"], json.dumps(moves), now()))
@@ -691,7 +717,7 @@ def retry_job(max_minutes=SAFE_JOB_MINUTES):
             target = next(p for p in obj["positions"] if int(p["index"]) == int(row["position_index"]))
             runtime_set(con, current_file=row["file_name"], current_index=row["position_index"], status="final_retry", batch_length=retry_batch_target)
             try:
-                moves, _ = sock.analyse(row["fen"])
+                moves, _ = analyse_with_retries(sock, row["fen"])
                 target["ca"] = moves
                 append_error(row["file_name"], row["position_index"], row["fen"], "Resolved by final retry", "RESOLVED")
                 con.execute("UPDATE errors SET status='resolved',error=?,updated_at=? WHERE dataset_id=? AND position_index=?",
