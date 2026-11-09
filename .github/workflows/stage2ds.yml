@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       phase:
-        description: "Start a fresh run, continue from the latest checkpoint, or run final retry"
+        description: "Resume Drive downloads and start, continue processing, or run final retry"
         required: true
         type: choice
         default: start
@@ -25,7 +25,7 @@ jobs:
   preflight:
     if: ${{ inputs.phase == 'start' }}
     runs-on: ubuntu-latest
-    timeout-minutes: 120
+    timeout-minutes: 180
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -40,8 +40,50 @@ jobs:
       - name: Install dependencies
         run: python -m pip install --upgrade pip && pip install -r requirements-stage2ds.txt
 
-      - name: Run full preflight checks
+      - name: Restore persistent Drive download cache
         env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p stage2dstempstorage
+          if gh release view stage2ds-latest --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            if gh release download stage2ds-latest --pattern stage2dstempstorage.zip --dir . --repo "$GITHUB_REPOSITORY"; then
+              unzip -oq stage2dstempstorage.zip
+              echo "Restored persistent Drive download cache."
+            else
+              echo "No previous download-cache asset; starting with an empty cache."
+            fi
+          else
+            echo "No previous Stage2DS release; starting with an empty cache."
+          fi
+
+      - name: Download only missing Drive files (stop after 3 consecutive errors)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          DRIVE_FOLDER_URL: https://drive.google.com/drive/folders/1FEext-LcjonVRFSHeav0Kxb2xOhS70n9
+        run: python scripts/stage2ds.py download
+
+      - name: Package persistent Drive download cache
+        if: always()
+        run: |
+          if [ -d stage2dstempstorage ]; then
+            python scripts/stage2ds.py temp-zip
+          else
+            echo "No download cache directory exists."
+          fi
+
+      - name: Save persistent Drive download cache to GitHub Release
+        if: always() && hashFiles('stage2dstempstorage.zip') != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view stage2ds-latest --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1 ||             gh release create stage2ds-latest --repo "$GITHUB_REPOSITORY"               --title "Stage2DS latest complete folder"               --notes "Persistent Drive download cache and rolling processing snapshot."
+          gh release upload stage2ds-latest stage2dstempstorage.zip --clobber --repo "$GITHUB_REPOSITORY"
+
+      - name: Run full preflight checks using cached downloads
+        env:
+          GH_TOKEN: ${{ github.token }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           DRIVE_FOLDER_URL: https://drive.google.com/drive/folders/1FEext-LcjonVRFSHeav0Kxb2xOhS70n9
@@ -50,15 +92,10 @@ jobs:
       - name: Create initial complete ZIP
         run: python scripts/stage2ds.py zip
 
-      - name: Create or update the persistent release snapshot
+      - name: Save initial processing snapshot
         env:
           GH_TOKEN: ${{ github.token }}
-        run: |
-          gh release view stage2ds-latest --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1 || \
-            gh release create stage2ds-latest --repo "$GITHUB_REPOSITORY" \
-              --title "Stage2DS latest complete folder" \
-              --notes "Rolling complete-folder snapshot for the Stage2DS processing workflow."
-          gh release upload stage2ds-latest stage2ds.zip --clobber --repo "$GITHUB_REPOSITORY"
+        run: gh release upload stage2ds-latest stage2ds.zip --clobber --repo "$GITHUB_REPOSITORY"
 
   process:
     needs: preflight
