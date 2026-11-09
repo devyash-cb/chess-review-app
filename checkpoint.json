@@ -1,0 +1,22 @@
+{
+  "schema": 1,
+  "reason": "2026-10 after 1232321 games",
+  "saved_utc": "2026-11-09T02:58:28Z",
+  "database_bytes": 1155551232,
+  "compressed_bytes": 442077459,
+  "parts": [
+    "state.sqlite3.zst.part000",
+    "state.sqlite3.zst.part001",
+    "state.sqlite3.zst.part002",
+    "state.sqlite3.zst.part003",
+    "state.sqlite3.zst.part004",
+    "state.sqlite3.zst.part005",
+    "state.sqlite3.zst.part006",
+    "state.sqlite3.zst.part007",
+    "state.sqlite3.zst.part008",
+    "state.sqlite3.zst.part009"
+  ],
+  "start_month": "2026-10",
+  "max_months": 12,
+  "seed": 20261108
+}
