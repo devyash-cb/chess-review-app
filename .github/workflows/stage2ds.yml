@@ -19,7 +19,7 @@ permissions:
 
 concurrency:
   group: stage2ds-pipeline
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   preflight:
@@ -129,7 +129,7 @@ jobs:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           DRIVE_FOLDER_URL: https://drive.google.com/drive/folders/1FEext-LcjonVRFSHeav0Kxb2xOhS70n9
-        run: python scripts/stage2ds.py process --max-minutes 320
+        run: python scripts/stage2ds.py process --max-minutes 320 --max-files 10
 
   final_retry:
     needs: preflight
