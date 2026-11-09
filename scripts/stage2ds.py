@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Stage2 dataset analyser for GitHub Actions.
 
-The preflight deliberately refuses to start the 1.25M-position run unless the
-Chess-API WebSocket response exposes five distinct MultiPV candidates.
+The Chess API may return between one and five legal candidate moves per FEN.
+Processing is checkpointed in large batches and split across bounded jobs.
 """
 from __future__ import annotations
 import argparse, json, os, random, re, shutil, sqlite3, subprocess, sys, time, uuid, zipfile, threading
@@ -25,9 +25,10 @@ API_DEPTH = 18
 API_VARIANTS = 5
 API_MAX_TIME = 100
 REQUEST_GAP = 0.1
-BATCH_MIN, BATCH_MAX = 60, 80
-PAUSE_MIN, PAUSE_MAX = 10, 40
+BATCH_MIN, BATCH_MAX = 900, 1100
+PAUSE_MIN, PAUSE_MAX = 20, 40
 CHECKPOINT_BATCHES = 5
+MAX_FILES_PER_JOB = 10
 EXPECTED_FILES = 125
 EXPECTED_POSITIONS = 10000
 SAFE_JOB_MINUTES = 320
@@ -416,6 +417,12 @@ class ChessSocket:
                     best_seen = True
                     if rank is None:
                         rank = 1
+                # Some API responses omit a MultiPV rank. Keep such candidate
+                # moves by assigning the next unused rank in arrival order.
+                if move and rank is None:
+                    used_moves = {str(v.get("move")) for v in found.values() if v.get("move")}
+                    if str(move) not in used_moves:
+                        rank = next((n for n in range(1, 6) if n not in found), None)
                 if rank and move:
                     old = found.get(rank)
                     old_depth = int(old.get("depth") or 0) if old else -1
@@ -428,16 +435,23 @@ class ChessSocket:
                 break
 
         ordered = [found[i] for i in range(1, 6) if i in found]
-        moves = [str(x.get("move")) for x in ordered if x.get("move")]
-        if len(moves) != 5 or len(set(moves)) != 5:
+        moves = []
+        for item in ordered:
+            move = item.get("move")
+            if move:
+                move = str(move)
+                if move not in moves:
+                    moves.append(move)
+        # One to five distinct legal moves are all valid. A position with no
+        # usable move is the only move-count failure.
+        if not moves:
             recent = raw_messages[-20:]
             raise RuntimeError(
-                f"Chess API WebSocket completed without 5 distinct ranked MultiPV moves "
-                f"(received {len(moves)}). requested_taskId={task_id}; "
-                f"response_taskIds={sorted(response_task_ids)}. Recent raw messages: "
-                f"{json.dumps(recent, ensure_ascii=False)[:6000]}"
+                "Chess API WebSocket completed without any usable legal candidate move. "
+                f"requested_taskId={task_id}; response_taskIds={sorted(response_task_ids)}. "
+                f"Recent raw messages: {json.dumps(recent, ensure_ascii=False)[:6000]}"
             )
-        return moves, raw_messages
+        return moves[:5], raw_messages
 
     def close(self):
         if self.ws:
@@ -716,7 +730,7 @@ def preflight():
             "[HTTPS OK] The Chess API accepted this exact FEN and returned move "
             + str(http_result["response"].get("move"))
         )
-        print("[6/8] Testing Chess API WebSocket MultiPV=5 on the same sample FEN...")
+        print("[6/8] Testing Chess API WebSocket candidate moves (1 to 5 allowed) on the same sample FEN...")
         sock = ChessSocket()
         try:
             moves, raw = analyse_with_retries(sock, fen)
@@ -730,7 +744,7 @@ def preflight():
         print("[8/8] Preflight passed. GitHub release write is tested by the following workflow upload step.")
         runtime_set(con, status="preflight_passed", current_file="-", current_index="-",
                     batch_length="-", next_batch_at="")
-        tg_message("STAGE2DS PREFLIGHT PASSED. All 125 files validated; SQLite, Telegram, Chess API HTTPS and WebSocket five-variant response, and ZIP creation passed. Processing will now start.")
+        tg_message("STAGE2DS PREFLIGHT PASSED. All 125 files validated; SQLite, Telegram, Chess API HTTPS and WebSocket candidate-move response, and ZIP creation passed. Processing will now start.")
     finally:
         poller.stop()
         con.close()
@@ -781,85 +795,166 @@ def complete_file(con, path: Path, obj):
     return False
 
 
-def process_job(max_minutes=SAFE_JOB_MINUTES):
-    con = db_open(); poller = TelegramPoller().start(); sock = ChessSocket()
-    start = time.monotonic(); deadline = start + max_minutes * 60
-    tg_message("STAGE2DS JOB STARTED: processing will continue from the latest saved checkpoint.")
+def process_job(max_minutes=SAFE_JOB_MINUTES, max_files=MAX_FILES_PER_JOB):
+    con = db_open()
+    poller = TelegramPoller().start()
+    sock = ChessSocket()
+    deadline = time.monotonic() + max_minutes * 60
+    files_completed_this_job = 0
+    tg_message(
+        f"STAGE2DS JOB STARTED: resuming from the latest checkpoint. "
+        f"Limit: {max_files} completed files or {max_minutes} minutes."
+    )
     runtime_set(con, status="processing", job_started=now())
-    batch_target = random.randint(BATCH_MIN, BATCH_MAX); batch_count = 0; batches_since_checkpoint = 0
+    batch_target = random.randint(BATCH_MIN, BATCH_MAX)
+    batch_count = 0
+    batches_since_checkpoint = 0
     stop = False
     try:
         paths = sorted(ROOT.glob("*.json"), key=lambda p: p.name.lower())
         for path in paths:
             last_attempted_idx = 0
-            obj = load_file(path); dsid = str(obj["dataset_id"]); total = len(obj["positions"])
-            file_row = con.execute("SELECT last_index,status FROM files WHERE dataset_id=?", (dsid,)).fetchone()
-            if file_row and file_row["status"] == "completed": continue
+            obj = load_file(path)
+            dsid = str(obj["dataset_id"])
+            total = len(obj["positions"])
+            file_row = con.execute(
+                "SELECT last_index,status FROM files WHERE dataset_id=?", (dsid,)
+            ).fetchone()
+            if file_row and file_row["status"] == "completed":
+                continue
+
             tg_message(f"FILE STARTED: {path.name}")
-            con.execute("UPDATE files SET status='processing',updated_at=? WHERE dataset_id=?", (now(), dsid)); con.commit()
+            con.execute(
+                "UPDATE files SET status='processing',updated_at=? WHERE dataset_id=?",
+                (now(), dsid),
+            )
+            con.commit()
+
             for pos in obj["positions"]:
                 idx = int(pos["index"])
-                frow = con.execute("SELECT last_index FROM files WHERE dataset_id=?", (dsid,)).fetchone()
+                frow = con.execute(
+                    "SELECT last_index FROM files WHERE dataset_id=?", (dsid,)
+                ).fetchone()
                 last_index = int(frow["last_index"] if frow else 0)
-                if idx <= last_index: continue
+                if idx <= last_index:
+                    continue
+                # Leave a 15-minute safety margin before the workflow timeout.
                 if time.monotonic() >= deadline - 900:
-                    stop = True; break
-                runtime_set(con, current_file=path.name, current_index=idx, status="processing", batch_length=batch_target)
+                    stop = True
+                    break
+
+                runtime_set(
+                    con, current_file=path.name, current_index=idx,
+                    status="processing", batch_length=batch_target,
+                )
                 try:
-                    moves, _ = analyse_with_retries(sock, pos["fen"])
+                    # No immediate retry: record the failure and advance to the next FEN.
+                    moves, _ = sock.analyse(pos["fen"])
                     pos["ca"] = moves
-                    con.execute("INSERT OR REPLACE INTO recent(dataset_id,file_name,position_index,fen,ca_json,updated_at) VALUES(?,?,?,?,?,?)",
-                                (dsid, path.name, idx, pos["fen"], json.dumps(moves), now()))
-                    con.execute("DELETE FROM recent WHERE rowid IN (SELECT rowid FROM recent ORDER BY updated_at DESC LIMIT -1 OFFSET 3)")
+                    con.execute(
+                        "INSERT OR REPLACE INTO recent(dataset_id,file_name,position_index,fen,ca_json,updated_at) VALUES(?,?,?,?,?,?)",
+                        (dsid, path.name, idx, pos["fen"], json.dumps(moves), now()),
+                    )
+                    con.execute(
+                        "DELETE FROM recent WHERE rowid IN "
+                        "(SELECT rowid FROM recent ORDER BY updated_at DESC LIMIT -1 OFFSET 3)"
+                    )
                 except Exception as exc:
                     msg = str(exc)[:1000]
                     append_error(path.name, idx, pos["fen"], msg)
-                    con.execute("INSERT OR REPLACE INTO errors(dataset_id,file_name,position_index,fen,error,status,retry_reserved,updated_at) VALUES(?,?,?,?,?,'failed',0,?)",
-                                (dsid, path.name, idx, pos["fen"], msg, now()))
+                    con.execute(
+                        "INSERT OR REPLACE INTO errors(dataset_id,file_name,position_index,fen,error,status,retry_reserved,updated_at) "
+                        "VALUES(?,?,?,?,?,'failed',0,?)",
+                        (dsid, path.name, idx, pos["fen"], msg, now()),
+                    )
                     print(f"ERROR {path.name} #{idx}: {msg}")
-                    time.sleep(3)
+                    # Drop a possibly stale socket. The next position reconnects.
+                    sock.close()
+                    time.sleep(5)
+
                 last_attempted_idx = idx
                 batch_count += 1
                 time.sleep(REQUEST_GAP)
+
                 if batch_count >= batch_target:
-                    # Save JSON first, then advance durable file index. A crash before this
-                    # point replays this batch rather than silently skipping unsaved results.
                     save_file(path, obj)
-                    con.execute("UPDATE files SET last_index=?,updated_at=? WHERE dataset_id=?", (idx, now(), dsid)); con.commit()
-                    batch_count = 0; batches_since_checkpoint += 1
+                    con.execute(
+                        "UPDATE files SET last_index=?,updated_at=? WHERE dataset_id=?",
+                        (idx, now(), dsid),
+                    )
+                    con.commit()
+                    batch_count = 0
+                    batches_since_checkpoint += 1
                     if batches_since_checkpoint >= CHECKPOINT_BATCHES:
-                        checkpoint(con); batches_since_checkpoint = 0
+                        checkpoint(con)
+                        batches_since_checkpoint = 0
+
                     pause = random.randint(PAUSE_MIN, PAUSE_MAX)
+                    tg_message(
+                        f"BATCH COMPLETED: {path.name} through position {idx}. "
+                        f"Pausing {pause} seconds before the next batch."
+                    )
                     pause_with_poll(con, pause)
                     batch_target = random.randint(BATCH_MIN, BATCH_MAX)
-            if stop: break
-            # Finish the tail of the file even if it is shorter than the random batch size.
+
+            if stop:
+                break
+
             save_file(path, obj)
             last = int(obj["positions"][-1]["index"]) if obj["positions"] else 0
-            con.execute("UPDATE files SET last_index=?,status='completed',updated_at=? WHERE dataset_id=?", (last, now(), dsid)); con.commit()
+            con.execute(
+                "UPDATE files SET last_index=?,status='completed',updated_at=? WHERE dataset_id=?",
+                (last, now(), dsid),
+            )
+            con.commit()
             log = error_path(path.name)
-            if not log.exists(): log.write_text("No errors recorded.\n", encoding="utf-8")
-            failed = con.execute("SELECT COUNT(*) n FROM errors WHERE dataset_id=?", (dsid,)).fetchone()["n"]
-            tg_message(f"FILE COMPLETED: {path.name}\nPositions: {total}\nSuccessful: {total-failed}\nFailed: {failed}")
+            if not log.exists():
+                log.write_text("No errors recorded.\n", encoding="utf-8")
+            failed = con.execute(
+                "SELECT COUNT(*) n FROM errors WHERE dataset_id=?", (dsid,)
+            ).fetchone()["n"]
+            tg_message(
+                f"FILE COMPLETED: {path.name}\nPositions: {total}\n"
+                f"Successful: {total-failed}\nFailed: {failed}"
+            )
             tg_document(log, f"Error log for {path.name}")
             batch_count = 0
+            files_completed_this_job += 1
             checkpoint(con)
-            pause_with_poll(con, 10)
-        # Persist any partial tail before the job exits.
-        if 'path' in locals() and 'obj' in locals() and batch_count:
+
+            if files_completed_this_job >= max_files:
+                stop = True
+                break
+
+        if "path" in locals() and "obj" in locals() and batch_count:
             save_file(path, obj)
-            last_idx = last_attempted_idx
-            con.execute("UPDATE files SET last_index=?,updated_at=? WHERE dataset_id=?", (last_idx, now(), str(obj["dataset_id"]))); con.commit()
-        runtime_set(con, status="job_checkpointing", current_index="-")
+            con.execute(
+                "UPDATE files SET last_index=?,updated_at=? WHERE dataset_id=?",
+                (last_attempted_idx, now(), str(obj["dataset_id"])),
+            )
+            con.commit()
+
+        runtime_set(
+            con, status="job_checkpointing", current_index="-",
+            files_completed_this_job=files_completed_this_job,
+        )
         checkpoint(con)
     finally:
-        sock.close(); poller.stop(); con.close()
-    # Dispatch the next workflow run only after the latest complete folder snapshot is uploaded.
+        sock.close()
+        poller.stop()
+        con.close()
+
     con2 = db_open()
-    remaining = con2.execute("SELECT COUNT(*) n FROM files WHERE status!='completed'").fetchone()["n"]
+    remaining = con2.execute(
+        "SELECT COUNT(*) n FROM files WHERE status!='completed'"
+    ).fetchone()["n"]
     con2.close()
     next_phase = "continue" if remaining else "retry"
-    tg_message(f"PROCESSING JOB FINISHED. Remaining files: {remaining}. Next phase: {next_phase}.")
+    tg_message(
+        f"PROCESSING JOB FINISHED. Files completed this job: "
+        f"{files_completed_this_job}/{max_files}. Remaining files: {remaining}. "
+        f"Next phase: {next_phase}."
+    )
     dispatch(next_phase)
 
 
@@ -885,7 +980,8 @@ def retry_job(max_minutes=SAFE_JOB_MINUTES):
             target = next(p for p in obj["positions"] if int(p["index"]) == int(row["position_index"]))
             runtime_set(con, current_file=row["file_name"], current_index=row["position_index"], status="final_retry", batch_length=retry_batch_target)
             try:
-                moves, _ = analyse_with_retries(sock, row["fen"])
+                # This is the single, separate final retry for this failed position.
+                moves, _ = sock.analyse(row["fen"])
                 target["ca"] = moves
                 append_error(row["file_name"], row["position_index"], row["fen"], "Resolved by final retry", "RESOLVED")
                 con.execute("UPDATE errors SET status='resolved',error=?,updated_at=? WHERE dataset_id=? AND position_index=?",
@@ -958,7 +1054,9 @@ def main():
     sub.add_parser("download")
     sub.add_parser("temp-zip")
     sub.add_parser("preflight")
-    p = sub.add_parser("process"); p.add_argument("--max-minutes", type=int, default=SAFE_JOB_MINUTES)
+    p = sub.add_parser("process")
+    p.add_argument("--max-minutes", type=int, default=SAFE_JOB_MINUTES)
+    p.add_argument("--max-files", type=int, default=MAX_FILES_PER_JOB)
     r = sub.add_parser("retry"); r.add_argument("--max-minutes", type=int, default=SAFE_JOB_MINUTES)
     sub.add_parser("zip"); sub.add_parser("next-phase")
     args = parser.parse_args()
@@ -966,7 +1064,7 @@ def main():
         if args.cmd == "download": download_drive_resumable(max_consecutive_errors=3)
         elif args.cmd == "temp-zip": print(create_temp_storage_zip())
         elif args.cmd == "preflight": preflight()
-        elif args.cmd == "process": process_job(args.max_minutes)
+        elif args.cmd == "process": process_job(args.max_minutes, args.max_files)
         elif args.cmd == "retry": retry_job(args.max_minutes)
         elif args.cmd == "zip": print(create_zip())
         elif args.cmd == "next-phase": next_phase()
